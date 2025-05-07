@@ -5,7 +5,7 @@
 import sys
 import time
 import argparse
-from ephys_utilities.ephys_utilities import OpenEphysClient
+from utilities.ephys_utilities import OpenEphysClient
 
 
 if __name__ == '__main__':
