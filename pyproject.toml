@@ -1,0 +1,52 @@
+[project]
+name = "python-open-ephys"
+version = "0.0.1"
+description = "Python interface and utilities for working with Open Ephys devices and electrophysiology data"
+authors = [
+    { name = "Jonathan Shulgach", email = "jshulgac@andrew.cmu.edu" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["open-ephys", "emg", "neurotech", "signal processing", "biomedical"]
+dependencies = [
+    "numpy>=1.26.0",
+    "scipy==1.14.1",
+    "matplotlib",
+    #"pandas",
+    #"PySerial",
+    "scikit-learn",
+    # "nvidia-cuda-toolkit", # This is not a Python package, but a system package
+    #"tensorflow==2.19.0",
+	"pyyaml",
+    "PyQt5",
+    "pyqtgraph",
+    #"pyyaml",
+    "pyzmq",
+    "pyserial",
+    "open-ephys-python-tools",
+]
+#dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys"
+
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pyoephys*"]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx",
+    "sphinx-autodoc-typehints",
+    "myst-parser",
+]
+

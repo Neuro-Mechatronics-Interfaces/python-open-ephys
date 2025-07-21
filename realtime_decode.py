@@ -12,10 +12,9 @@ parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
 sys.path.append(parent_dir)
 
 # Get utilities
-from utilities import emg_processing as emg_proc
-from utilities import ephys_utilities as ephys_utils
-from utilities import emg_processing as emg_proc
-from utilities.ml_utilities import EMGCNN
+from src.old_utils import emg_processing as emg_proc, ephys_utilities as ephys_utils
+from old_utils import emg_processing as emg_proc
+from src.old_utils.ml_utilities import EMGCNN
 
 
 class EphysEMGDecoder:

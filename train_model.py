@@ -16,9 +16,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
 sys.path.append(parent_dir)
 
-from utilities import emg_processing as emg_proc
-from utilities import ml_utilities as ml_utils
-from utilities import ephys_utilities as ephys_utils
+from src.old_utils import emg_processing as emg_proc, ml_utilities as ml_utils, ephys_utilities as ephys_utils
+
 
 def process_emg_data(file_paths, metrics_data, gesture_map, n_channels, verbose):
     X_list, y_list = [], []

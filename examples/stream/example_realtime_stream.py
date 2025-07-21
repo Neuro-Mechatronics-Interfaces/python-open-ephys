@@ -1,6 +1,6 @@
 import argparse
-from utilities.ephys_utilities import OpenEphysClient
-from utilities.realtime_plotter import RealtimePlotter
+from src.old_utils.ephys_utilities import OpenEphysClient
+from pyoephys.plotting import RealtimePlotter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

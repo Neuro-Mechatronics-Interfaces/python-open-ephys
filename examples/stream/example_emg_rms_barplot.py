@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import iirnotch, butter, filtfilt
 from matplotlib.animation import FuncAnimation
-from utilities.ephys_utilities import OpenEphysClient
+from pyoephys.interface import OpenEphysClient
 
 
 # === Filtering Functions ===
