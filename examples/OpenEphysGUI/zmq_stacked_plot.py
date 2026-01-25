@@ -14,21 +14,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Parse channel selection
-    channels_to_plot = parse_numeric_args(args.channels)
-    print(f"Channels to plot: {channels_to_plot}")
+    channels = parse_numeric_args(args.channels)
+    print(f"Channels to plot: {channels}")
 
     # Launch the Qt Application
     app = QApplication(sys.argv)
 
-    client = ZMQClient()
+    client = ZMQClient(
+        host_ip="127.0.0.1",
+        data_port="5556",  # your Open Ephys ZMQ data port
+        verbose=True,
+    )
+    client.set_channel_index(channels)
+    client.start()
 
     # Create and launch the stacked plotter
     plotter = StackedPlot(
         client=client,
-        channels_to_plot=channels_to_plot,
-        interval_ms=100,
-        buffer_secs=4,
-        downsample_factor=args.downsample,
+        auto_ylim=True
     )
-    plotter.start()
+    plotter.show()
     sys.exit(app.exec_())

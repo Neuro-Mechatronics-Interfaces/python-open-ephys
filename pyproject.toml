@@ -12,7 +12,9 @@ keywords = ["open-ephys", "emg", "neurotech", "signal processing", "biomedical"]
 dependencies = [
     "numpy>=1.26.0",
     "scipy==1.14.1",
-    "matplotlib",
+    #"matplotlib",
+    "tqdm",
+    "torch",
     #"pandas",
     #"PySerial",
     "scikit-learn",
@@ -43,10 +45,20 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["pyoephys*"]
 
+[tool.setuptools.package-data]
+# include all files under pyoephys/io/data/**
+"pyoephys.io.data" = ["**/*"]
+
 [project.optional-dependencies]
 docs = [
     "sphinx",
     "sphinx-autodoc-typehints",
     "myst-parser",
 ]
+gui = ["PyQt5", "pyqtgraph"]
+ml = ["torch", "scikit-learn", "joblib"]
+
+[project.scripts]
+pyoephys-lsl2npz = "pyoephys.applications.lsl2npz:lsl2npz_cli"
+pyoephys-playback = "pyoephys.interface._playback_client:playback_cli"
 

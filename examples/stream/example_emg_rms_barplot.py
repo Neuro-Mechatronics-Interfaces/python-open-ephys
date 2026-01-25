@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import iirnotch, butter, filtfilt
 from matplotlib.animation import FuncAnimation
-from pyoephys.interface import OpenEphysClient
+from pyoephys.interface import ZMQClient
 
 
 # === Filtering Functions ===
@@ -27,7 +27,7 @@ window_samples = int(fs * window_sec)
 n_channels = 128
 noise_threshold = 100  # RMS threshold for flagging noisy channels
 
-client = OpenEphysClient(data_port=5556)
+client = OpenEphysDevice(data_port=5556)
 
 # === Initial Plot ===
 fig, ax = plt.subplots(figsize=(16, 6))
@@ -47,7 +47,8 @@ def update(frame):
     rms_values = []
 
     for ch in range(n_channels):
-        samples = client.get_samples(channel=ch, n_samples=window_samples)
+        #samples = client.get_samples(channel=ch, n_samples=window_samples)
+        samples = client.get_latest_window(window_sec*1000)
         if len(samples) < window_samples:
             samples = np.pad(samples, (0, window_samples - len(samples)), mode='constant')
 

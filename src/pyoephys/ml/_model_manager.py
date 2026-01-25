@@ -1,9 +1,12 @@
 # pyoephys.ml._model_manager.py
 import os
+import time
 import pickle
 import random
+import platform
 import json
 import torch
+from typing import Any, Dict, Iterable, Optional, List
 import joblib
 import logging
 import numpy as np
@@ -30,8 +33,75 @@ def setup_logger():
 setup_logger()
 
 
+def _jsonify(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.floating, np.integer)):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {k: _jsonify(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonify(v) for v in obj]
+    return obj
+
+
 def _is_classification(y):
     return y.dtype.kind in {'i', 'u', 'O', 'S', 'U'} and len(np.unique(y)) < 1000
+
+
+def load_training_metadata(file_path: str) -> Dict:
+    """Load model metadata saved at training time."""
+    if file_path.endswith(".json"):
+        root_dir = os.path.dirname(file_path)
+    else:
+        root_dir = file_path
+    meta_path = os.path.join(root_dir, "model", "metadata.json")
+    if not os.path.isfile(meta_path):
+        raise FileNotFoundError(f"Missing metadata.json at {meta_path}")
+    with open(meta_path, "r") as f:
+        return json.load(f)
+
+
+def write_training_metadata(root_dir: str, *, window_ms: int, step_ms: int, envelope_cutoff_hz: float,
+    channel_names: Optional[Iterable[str]] = None, selected_channels: Optional[Iterable[int]] = None,
+    sample_rate_hz: Optional[float] = None, n_features: Optional[int] = None, feature_set: Optional[Iterable[str]] = None,
+    require_complete: bool = True, required_fraction: float = 1.0, channel_wait_timeout_sec: float = 15.0) -> None:
+    """
+    Merge/update fields in model/metadata.json so real-time ZMQ prediction has a single source of truth.
+    Non-destructive: preserves any existing keys unless overridden here.
+    """
+    meta_dir = os.path.join(root_dir, "model")
+    os.makedirs(meta_dir, exist_ok=True)
+    meta_path = os.path.join(meta_dir, "metadata.json")
+
+    # Load existing metadata if present
+    meta = load_training_metadata(meta_path) if os.path.isfile(meta_path) else {}
+
+    # Core pipeline params (training-time truth)
+    meta.update({
+        "window_ms": int(window_ms),
+        "step_ms": int(step_ms),
+        "envelope_cutoff_hz": float(envelope_cutoff_hz),
+        "require_complete": bool(require_complete),
+        "required_fraction": float(required_fraction),
+        "channel_wait_timeout_sec": float(channel_wait_timeout_sec),
+    })
+
+    if channel_names is not None:
+        meta["channel_names"] = list(channel_names)
+    if selected_channels is not None:
+        meta["selected_channels"] = [int(i) for i in selected_channels]
+    if sample_rate_hz is not None:
+        meta["sample_rate_hz"] = float(sample_rate_hz)
+    if n_features is not None:
+        meta["n_features"] = int(n_features)
+    if feature_set is not None:
+        meta["feature_set"] = list(feature_set)
+
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+    print(f"[INFO] Metadata updated at {meta_path}")
+
 
 
 class ModelManager:
@@ -43,12 +113,8 @@ class ModelManager:
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.eval_metrics = {}
-        #self.metadata_file = metadata_file
         self.verbose = verbose
 
-        #if metadata_file is not None:
-        #    self._load_metadata_file(metadata_file)
-        #    return
         if config and isinstance(config, str):
             config = load_config_file(config)
         self.config = config or {}
@@ -85,59 +151,9 @@ class ModelManager:
         self.scaler = None
         self.eval_metrics = {}
 
-    # def _load_metadata_file(self, metadata_file):
-    #     # --- If using metadata file ---
-    #     if not os.path.exists(metadata_file):
-    #         raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-    #     with open(metadata_file, 'r') as f:
-    #         metadata = json.load(f)
-    #
-    #     self.input_dim = metadata['input_dim']
-    #     self.output_dim = metadata['output_dim']
-    #     self.label = metadata.get('label', None)
-    #     self.root_dir = os.path.dirname(metadata_file)
-    #     self.model_dir = self.root_dir
-    #     self.model_path = metadata['model_path']
-    #     self.scaler_path = metadata['scaler_path']
-    #     self.encoder_path = metadata.get('encoder_path')
-    #     self.metrics_path = metadata.get('metrics_path', '')
-    #     model_class_name = metadata['model_type']
-    #
-    #     # Dynamically instantiate model
-    #     if model_class_name == "EMGClassifier":
-    #         from pyoephys.ml import EMGClassifier
-    #         self.model = EMGClassifier(input_dim=self.input_dim, output_dim=self.output_dim)
-    #     elif model_class_name == "EMGRegressor":
-    #         from pyoephys.ml import EMGRegressor
-    #         self.model = EMGRegressor(input_dim=self.input_dim, output_dim=self.output_dim)
-    #     else:
-    #         raise ValueError(f"Unknown model type: {model_class_name}")
-    #
-    #     # Load scaler
-    #     if os.path.exists(self.scaler_path):
-    #         with open(self.scaler_path, 'rb') as f:
-    #             self.scalar = pickle.load(f)
-    #
-    #     # Load label encoder if classification
-    #     if self.encoder_path and os.path.exists(self.encoder_path):
-    #         with open(self.encoder_path, 'rb') as f:
-    #             self.label_encoder = joblib.load(f)
-    #
-    #     # Load weights
-    #     self.load_weights()
-    #
-    #     if self.verbose:
-    #         print(f"[INFO] Loaded model from metadata: {metadata_file}")
-    #         print(f" - Model type: {model_class_name}")
-    #         print(f" - Input dim: {self.input_dim}, Output dim: {self.output_dim}")
-    #
-    #     self.model_exists = True
-    #     return  # Stop here if metadata was provided
-
-    # def decode_labels(self, y_encoded):
-    #     if self.label_encoder is not None:
-    #         return self.label_encoder.inverse_transform(y_encoded)
-    #     return y_encoded
+    #@property
+    #def metadata_path(self) -> str:
+    #    return os.path.join(self.model_dir, "metadata.json")
 
     def _build_dataset(self, X, y, validation_data=None):
         # Optional class-imbalance warning
@@ -220,42 +236,6 @@ class ModelManager:
         y_train_t = torch.tensor(y_train, dtype=torch.long if self.encoder else torch.float32)
         X_val_t = torch.tensor(X_val, dtype=torch.float32)
         y_val_t = torch.tensor(y_val, dtype=torch.long if self.encoder else torch.float32)
-
-
-        # if _is_classification(y):
-        #     self.label_encoder = LabelEncoder()
-        #     y_train = self.label_encoder.fit_transform(y_train)
-        #     if self.verbose:
-        #         print(f"[INFO] Classes: {list(self.label_encoder.classes_)}")
-        #     y_test = self.label_encoder.transform(y_test)
-        #     criterion = torch.nn.CrossEntropyLoss()
-        #
-        #     # Save encoder to disk
-        #     with open(self.encoder_path, 'wb') as f:
-        #         joblib.dump(self.label_encoder, f)
-        #
-        # else:
-        #     y_train = y_train.astype(np.float32)
-        #     y_test = y_test.astype(np.float32)
-        #     criterion = torch.nn.MSELoss()
-
-        #if self.model is None:
-        #    raise ValueError("Model must be set before training. Use set_model_type() to set the model class.")
-
-        #scalar = StandardScaler()
-        #X_train = scalar.fit_transform(X_train)
-        #X_test = scalar.transform(X_test)
-
-        #model = self.model
-        # X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-        # X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-        # if _is_classification(y):
-        #     y_train_tensor = torch.tensor(y_train, dtype=torch.long)
-        #     y_test_tensor = torch.tensor(y_test, dtype=torch.long)
-        # else:
-        #     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
-        #     y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
-
         if self.verbose:
             print("Starting training...")
 
@@ -294,35 +274,24 @@ class ModelManager:
         torch.save(self.model.state_dict(), self.model_path)
         print("Model saved")
 
-        # with open(self.scaler_path, 'wb') as f:
-        #     pickle.dump(scalar, f)
-        #
-
         # Save metadata
-        metadata = {
-            "input_dim": self.model.input_dim,
-            "output_dim": self.model.output_dim,
-            "model_type": self.model.__class__.__name__,
-            "model_path": self.model_path,
-            "scaler_path": self.scaler_path,
-            #"encoder_path": self.encoder_path if self.label_encoder else None,
-            #"label_classes": list(self.encoder.classes_) if self.label_encoder else None,
-            "metrics_path": self.metrics_path,
-            "training_config": {
-                "num_epochs": num_epochs,
-                "stop_patience": stop_patience,
-                "learning_rate": learning_rate,
-                "val_interval": val_interval
-            }
-        }
-        #metadata_path = os.path.join(self.model_dir,
-        #                              f"{self.label}_metadata.json" if self.label else "model_metadata.json")
-        with open(self.metadata_path, 'w') as f:
-             json.dump(metadata, f, indent=2)
-        self.logger.info(f"Metadata saved to {self.metadata_path}")
-        #
-        # if self.verbose:
-        #     print(f"[INFO] Metadata saved to {metadata_path}")
+        # metadata = {
+        #     "input_dim": self.model.input_dim,
+        #     "output_dim": self.model.output_dim,
+        #     "model_type": self.model.__class__.__name__,
+        #     "model_path": self.model_path,
+        #     "scaler_path": self.scaler_path,
+        #     "metrics_path": self.metrics_path,
+        #     "training_config": {
+        #         "num_epochs": num_epochs,
+        #         "stop_patience": stop_patience,
+        #         "learning_rate": learning_rate,
+        #         "val_interval": val_interval
+        #     }
+        # }
+        # with open(self.metadata_path, 'w') as f:
+        #      json.dump(metadata, f, indent=2)
+        # self.logger.info(f"Metadata saved to {self.metadata_path}")
 
         # Evaluate on validation dataset
         self.model.eval()
@@ -336,126 +305,18 @@ class ModelManager:
                 }
             else:
                 pred_vals = y_pred.numpy().ravel()
-                #y_true_np = y_val_t.numpy()
                 self.eval_metrics = {
                     'mse': float(mean_squared_error(y_val, pred_vals)),
                     'mae': float(mean_absolute_error(y_val, pred_vals)),
                     'r2': float(r2_score(y_val, pred_vals))
                 }
-                #    'mse': mean_squared_error(y_true_np, y_pred_np)),
-                #    'mae': float(mean_absolute_error(y_true_np, y_pred_np)),
-                #    'r2': float(r2_score(y_true_np, y_pred_np))
-                #}
 
-        #if save_metrics:
+        print("Training complete. Validation metrics:")
+        print(self.eval_metrics)
+
         with open(self.metrics_path, 'w') as f:
             json.dump(self.eval_metrics, f, indent=2)
         self.logger.info(f"Evaluation metrics saved to {self.metrics_path}")
-
-
-    # def load_weights(self, model_path=None):
-    #     if model_path is None and self.model_path is None:
-    #         raise ValueError("Weights path must be provided or set in the ModelManager.")
-    #     if model_path is None:
-    #         model_path = self.model_path
-    #     if not os.path.exists(model_path):
-    #         raise FileNotFoundError(f"Weights file not found at {model_path}")
-    #     if self.model is None:
-    #         raise ValueError("Model must be set before loading weights. Use set_model_type() to set the model class.")
-    #
-    #     if self.verbose:
-    #         print(f"Loading model weights from {model_path}")
-    #
-    #     state_dict = torch.load(model_path, map_location=torch.device('cpu'))
-    #     #print(f"Model state_dict keys: {list(state_dict.keys())}")
-    #     self.model.load_state_dict(state_dict)
-    #
-    #     self.model.eval()
-
-    # def load_scalar(self, scalar=None):
-    #
-    #     if scalar is not None:
-    #         self.scalar = scalar
-    #         if self.verbose:
-    #             print("Scaler set directly.")
-    #         return
-    #     if not os.path.exists(self.scaler_path):
-    #         raise FileNotFoundError(f"Scaler file not found: {self.scaler_path}")
-    #     with open(self.scaler_path, 'rb') as f:
-    #         self.scalar = pickle.load(f)
-    #     if self.verbose:
-    #         print(f"Scaler loaded from {self.scaler_path}")
-    #         print(f"Scalar contents: {self.scalar}")
-    #
-    # def save_scalar(self, scalar):
-    #     with open(self.scaler_path, 'wb') as f:
-    #         pickle.dump(scalar, f)
-    #     if self.verbose:
-    #         logging.info(f"Scaler saved to {self.scaler_path}")
-
-    # def set_model_type(self, model_class=None, input_dim=None, output_dim=None):
-    #     """
-    #     Set the model class and optionally input/output dimensions.
-    #     If input/output dimensions are not provided, they will be taken from the model class.
-    #
-    #     Parameters:
-    #         model_class (class): The model class to set.
-    #         input_dim (int, optional): Input dimension for the model.
-    #         output_dim (int, optional): Output dimension for the model.
-    #
-    #     """
-    #     if model_class is None:
-    #         if self.root_dir is None or self.label is None:
-    #             raise ValueError("Model class must be provided or root_dir (and optional label) must be set.")
-    #
-    #         if self.root_dir and self.label:
-    #             model_class = os.path.join(self.model_dir, f"{self.label}_emg_regressor.pth")
-    #
-    #         #raise ValueError("Model class must be provided.")
-    #
-    #     self.model = model_class
-
-    # def load_model(self, model=None, weights=None, scalar=None):
-    #     #if not model:
-    #     #    raise ValueError("Model must be provided to load.")
-    #     self.set_model_type(model)
-    #     if self.verbose:
-    #         logging.info(f"Model set to {self.model.__class__.__name__}")
-    #
-    #     if weights is not None:
-    #         self.load_weights(weights)
-    #     elif os.path.exists(self.model_path):
-    #         self.load_weights()
-    #
-    #     if scalar is not None:
-    #         self.load_scalar(scalar)
-    #     elif os.path.exists(self.scaler_path):
-    #         self.load_scalar()
-    #
-    #     self.model_exists = True
-
-    # def load_model_weights(self):
-    #     """
-    #     Load the model and scalar from disk.
-    #     If the model is not set, it will raise an error.
-    #
-    #     """
-    #
-    #     self.load_scalar()
-    #     self.load_weights()
-    #
-    #     if self.verbose:
-    #         logging.info(f"Model loaded from {self.model_path} and scalar from {self.scaler_path}")
-    #     # print ut the model shape, input and output dimensions
-    #     if self.verbose:
-    #         logging.info(f"Model: {self.model}, Input Dim: {self.model.input_dim}, Output Dim: {self.model.output_dim}")
-    #
-    #     # Optionally load evaluation metrics if available
-    #     if os.path.exists(self.metrics_path):
-    #         with open(self.metrics_path, 'r') as f:
-    #             self.eval_metrics = json.load(f)
-    #
-    #     #return self.model, self.scalar
 
     def load_model(self):
         # Load metadata
@@ -497,20 +358,14 @@ class ModelManager:
         # Load scalar, pca, encoder if needed
         if self.scaler is None:
             self.scaler = joblib.load(self.scaler_path)
-            
-            #if os.path.exists(self.scaler_path):
-            #    with open(self.scaler_path, 'rb') as f:
-            #        self.scalar = pickle.load(f)
-            #    if self.verbose:
-            #        logging.info(f"Scaler loaded from {self.scaler_path}")
-            #else:
-            #    raise ValueError("Scaler is not loaded and could not be found.")
+
         X_scaled = self.scaler.transform(X)
 
         if self.pca:
-            with open(self.pca_path, 'rb') as f:
-                self.pca = pickle.load(f)
             X_scaled = self.pca.transform(X_scaled)
+
+        if X_scaled.shape[1] != self.model.input_dim:
+            raise ValueError(f"Feature dim {X_scaled.shape[1]} != model.input_dim {self.model.input_dim}")
 
         # Predict
         self.model.eval()
@@ -560,120 +415,59 @@ class ModelManager:
             metrics.append(self.eval_metrics)
         return metrics
 
-    # def cross_validate(self, X, y, k=5, num_epochs=3000, early_stop_patience=5, learning_rate=1e-3, val_interval=20):
-    #     """
-    #     Perform k-fold cross-validation on the model.
-    #
-    #     Parameters:
-    #         X (np.ndarray): Input features.
-    #         y (np.ndarray): Target values.
-    #         k (int): Number of folds for cross-validation.
-    #         num_epochs (int): Number of epochs for training.
-    #         early_stop_patience (int): Patience for early stopping.
-    #         learning_rate (float): Learning rate for the optimizer.
-    #         val_interval (int): Validation interval.
-    #
-    #     Returns:
-    #         dict: Cross-validation metrics.
-    #     """
-    #
-    #     kf = KFold(n_splits=k, shuffle=True, random_state=42)
-    #     metrics_list = []
-    #     loss_curves = []
-    #     best_val_loss = float('inf')
-    #     best_fold_index = -1
-    #     best_model_state = None
-    #     best_scalar = None
-    #
-    #     for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
-    #         print(f"\n--- Fold {fold + 1}/{k} ---")
-    #         X_train, X_val = X[train_idx], X[val_idx]
-    #         y_train, y_val = y[train_idx], y[val_idx]
-    #
-    #         scalar = StandardScaler()
-    #         X_train_scaled = scalar.fit_transform(X_train)
-    #         X_val_scaled = scalar.transform(X_val)
-    #
-    #         model = self.model.__class__(input_dim=X.shape[1],
-    #                                      output_dim=np.unique(y).shape[0] if _is_classification(y) else y.shape[1])
-    #         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    #         criterion = torch.nn.MSELoss()
-    #
-    #         X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
-    #         y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
-    #         X_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float32)
-    #         y_val_tensor = torch.tensor(y_val, dtype=torch.float32)
-    #
-    #         loss_curve = []
-    #         no_improve = 0
-    #         best_fold_val_loss = float('inf')
-    #
-    #         for epoch in range(num_epochs):
-    #             model.train()
-    #             optimizer.zero_grad()
-    #             pred = model(X_train_tensor)
-    #             loss = criterion(pred, y_train_tensor)
-    #             loss.backward()
-    #             optimizer.step()
-    #             loss_curve.append(loss.item())
-    #
-    #             if (epoch + 1) % val_interval == 0:
-    #                 model.eval()
-    #                 with torch.no_grad():
-    #                     val_pred = model(X_val_tensor)
-    #                     val_loss = criterion(val_pred, y_val_tensor).item()
-    #                     print(f"Epoch {epoch + 1} - Train Loss: {loss.item():.6f}, Val Loss: {val_loss:.6f}")
-    #
-    #                 if val_loss < best_fold_val_loss:
-    #                     best_fold_val_loss = val_loss
-    #                     no_improve = 0
-    #                 else:
-    #                     no_improve += 1
-    #                     if no_improve >= early_stop_patience:
-    #                         print("Early stopping")
-    #                         break
-    #
-    #         # Evaluate final model for this fold
-    #         model.eval()
-    #         with torch.no_grad():
-    #             y_pred = model(X_val_tensor).numpy()
-    #             y_true = y_val_tensor.numpy()
-    #         metrics = {
-    #             'fold': fold,
-    #             'mse': float(mean_squared_error(y_true, y_pred)),
-    #             'mae': float(mean_absolute_error(y_true, y_pred)),
-    #             'r2': float(r2_score(y_true, y_pred))
-    #         }
-    #         metrics_list.append(metrics)
-    #         loss_curves.append(loss_curve)
-    #
-    #         if best_fold_val_loss < best_val_loss:
-    #             best_val_loss = best_fold_val_loss
-    #             best_model_state = model.state_dict()
-    #             best_scalar = scalar
-    #             best_fold_index = fold
-    #
-    #     # Save best model and scalar
-    #     self.model = self.model.__class__(input_dim=X.shape[1],
-    #                                  output_dim=np.unique(y).shape[0] if _is_classification(y) else y.shape[1])
-    #     self.model.load_state_dict(best_model_state)
-    #     torch.save(self.model.state_dict(), self.model_path)
-    #     with open(self.scaler_path, 'wb') as f:
-    #         pickle.dump(best_scalar, f)
-    #
-    #     average_metrics = {
-    #         'mse': float(np.mean([m['mse'] for m in metrics_list])),
-    #         'mae': float(np.mean([m['mae'] for m in metrics_list])),
-    #         'r2': float(np.mean([m['r2'] for m in metrics_list]))
-    #     }
-    #     with open(self.metrics_path.replace('.json', '_kfold.json'), 'w') as f:
-    #         json.dump({'folds': metrics_list, 'average': average_metrics, 'loss_curves': loss_curves}, f, indent=2)
-    #
-    #     print("\nK-fold cross-validation complete. Average metrics:")
-    #     print(average_metrics)
-    #     print(f"\nBest model came from fold {best_fold_index + 1}")
-    #     return self.model, best_scalar
+    def build_metadata(self, *, sample_rate_hz: float, window_ms: int, step_ms: int, envelope_cutoff_hz: float,
+            selected_channels: Optional[List[int]], channel_names: Optional[List[str]], feature_spec: Dict[str, Any],
+            n_features: int, label_classes: List[str], scaler_mean: Optional[List[float]] = None,
+            scaler_scale: Optional[List[float]] = None, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Build a self-describing metadata dict the prediction paths can trust.
+        """
+        now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+        meta = {
+            "schema_version": "1.1.0",
+            "created_by": "pyoephys.ml.ModelManager",
+            "system": {"platform": platform.platform()},
+            "model": {
+                "class": type(self.model).__name__ if getattr(self, "model",
+                                                              None) is not None else self.model_cls.__name__,
+                "path": os.path.relpath(self.model_path, self.root_dir),
+                "label_encoder_path": os.path.relpath(self.label_encoder_path, self.root_dir) if hasattr(self,
+                                                                                                         "label_encoder_path") else None,
+                "scaler_path": os.path.relpath(self.scaler_path, self.root_dir) if hasattr(self,
+                                                                                           "scaler_path") else None,
+            },
+            "input_dim": int(self.model.input_dim),
+            "output_dim": int(self.model.output_dim),
+            "data": {
+                "sample_rate_hz": float(sample_rate_hz),
+                "window_ms": int(window_ms),
+                "step_ms": int(step_ms),
+                "envelope_cutoff_hz": float(envelope_cutoff_hz),
+                "selected_channels": selected_channels,  # indices in raw order used for training (may be None)
+                "channel_names": channel_names,  # full list (raw order) if available
+            },
+            "features": {
+                "n_features": int(n_features),
+                # feature_spec describes how the feature vector was built
+                # (names, per-channel vs global, order, etc.)
+                "spec": feature_spec or {},
+            },
+            "labels": {
+                "classes": list(map(str, label_classes)),
+            },
+            "scaler": {
+                "mean": scaler_mean,
+                "scale": scaler_scale,
+            },
+        }
+        if extra:
+            # attach any training-time metrics or notes
+            meta["extra"] = extra
+        return meta
 
-    @property
-    def classes(self):
-        return list(self.label_encoder.classes_) if self.label_encoder else []
+    def save_metadata(self, meta: Dict[str, Any]) -> None:
+        os.makedirs(self.model_dir, exist_ok=True)
+        with open(self.metadata_path, "w", encoding="utf-8") as f:
+            json.dump(_jsonify(meta), f, indent=2)
+        if self.config.get("verbose"):
+            print(f"[ModelManager] wrote metadata → {self.metadata_path}")

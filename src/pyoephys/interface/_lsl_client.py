@@ -1,13 +1,22 @@
+from __future__ import annotations
 
+import time
 import threading
 import numpy as np
-from pylsl import StreamInlet, resolve_byprop
+from typing import Optional, Tuple, Sequence
 
-#from pyoephys.processing import RealtimeEMGFilter  # or your custom _filters import
+from pylsl import StreamInlet, resolve_byprop, resolve_streams, local_clock
+from pyoephys.logging import get_logger
+
+log = get_logger("interface.lsl")
+
+
+class NotReadyError(RuntimeError):
+    pass
 
 
 # A generic LSL handler that subscribes to LSL streams and provides basic functionality
-class LSLClient:
+class OldLSLClient:
     """
     LSL timebase client (ring buffer) that pulls CHUNKS with timestamps and serves
     a rolling window on request.
@@ -197,3 +206,197 @@ class LSLClient:
         if dt.size == 0:
             return float("nan")
         return 1.0 / np.median(dt)
+
+
+class LSLClient:
+    """
+    Subscribe to an LSL stream and keep a thread-safe ring buffer.
+
+    Parameters
+    ----------
+    stream_name : Optional[str]
+        Exact LSL stream name to match. If None, matches by type only.
+    stream_type : str
+        LSL stream type to match (e.g., "EMG").
+    timeout_s : float
+        How long to wait for a matching stream on start().
+    buffer_seconds : float
+        Size of the internal ring buffer in seconds.
+    pull_timeout : float
+        Timeout per pull_chunk() in seconds.
+    """
+
+    def __init__(
+        self,
+        stream_name: Optional[str] = None,
+        stream_type: str = "EMG",
+        timeout_s: float = 5.0,
+        buffer_seconds: float = 30.0,
+        pull_timeout: float = 0.2,
+        verbose: bool = False,
+    ) -> None:
+        self.stream_name = stream_name
+        self.stream_type = stream_type
+        self.timeout_s = float(timeout_s)
+        self.buffer_seconds = float(buffer_seconds)
+        self.pull_timeout = float(pull_timeout)
+        self.verbose = bool(verbose)
+
+        self._inlet: Optional[StreamInlet] = None
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+        self.ready_event = threading.Event()
+
+        # buffer (C x N), timestamps (N)
+        self._buf_y: Optional[np.ndarray] = None
+        self._buf_t: Optional[np.ndarray] = None
+        self._widx: int = 0
+        self._count: int = 0
+        self._lock = threading.Lock()
+
+        # meta
+        self.fs_hz: Optional[float] = None
+        self.n_channels: Optional[int] = None
+        self.channel_labels: Optional[Sequence[str]] = None
+
+    # -------------- lifecycle ----------------
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+
+        info = self._resolve_stream()
+        self._inlet = StreamInlet(info, max_buflen=int(self.buffer_seconds) + 5)
+
+        # meta
+        self.fs_hz = float(info.nominal_srate())
+        self.n_channels = int(info.channel_count())
+
+        # allocate ring
+        n = max(int(self.buffer_seconds * self.fs_hz), 1)
+        self._buf_y = np.zeros((self.n_channels, n), dtype=np.float32)
+        self._buf_t = np.zeros((n,), dtype=np.float64)
+        self._widx = 0
+        self._count = 0
+
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run_loop, name="LSLClient", daemon=True)
+        self._thread.start()
+        if self.verbose:
+            log.info(
+                "LSL client started: name=%s type=%s fs=%.2fHz channels=%d buffer=%ds",
+                self.stream_name or "<any>",
+                self.stream_type,
+                self.fs_hz,
+                self.n_channels,
+                self.buffer_seconds,
+            )
+
+    def stop(self, timeout: Optional[float] = 2.0) -> None:
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+        if self.verbose:
+            log.info("LSL client stopped.")
+
+    # -------------- data access ----------------
+
+    def get_latest(self, n: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Return the latest `n` samples as (C×n, n_t). Raises if not ready."""
+        if not self.ready_event.is_set():
+            raise NotReadyError("LSLClient not ready; no data received yet.")
+        with self._lock:
+            assert self._buf_y is not None and self._buf_t is not None
+            n = int(max(1, min(n, self._buf_t.size, self._count)))
+            end = self._widx
+            start = (end - n) % self._buf_t.size
+            if start < end:
+                y = self._buf_y[:, start:end]
+                t = self._buf_t[start:end]
+            else:
+                y = np.hstack((self._buf_y[:, start:], self._buf_y[:, :end]))
+                t = np.concatenate((self._buf_t[start:], self._buf_t[:end]))
+        return y.copy(), t.copy()
+
+    def get_window(self, seconds: float) -> Tuple[np.ndarray, np.ndarray]:
+        """Return the last `seconds` of data."""
+        if self.fs_hz is None:
+            raise NotReadyError("LSLClient not ready; fs unknown.")
+        n = int(max(1, seconds * self.fs_hz))
+        return self.get_latest(n)
+
+    # -------------- internals ----------------
+
+    def _resolve_stream(self):
+        """
+        Resolve an LSL stream using pylsl.resolve_byprop/resolve_streams so it works
+        across pylsl versions that don't export `resolve_stream`.
+        """
+        pred_bits = []
+        if self.stream_name:
+            pred_bits.append(f"name='{self.stream_name}'")
+        if self.stream_type:
+            pred_bits.append(f"type='{self.stream_type}'")
+        pred_str = " and ".join(pred_bits) if pred_bits else "<any>"
+
+        if self.verbose:
+            log.info("Resolving LSL stream with: %s", pred_str)
+
+        deadline = time.perf_counter() + self.timeout_s
+        while time.perf_counter() < deadline:
+            if self.stream_name and self.stream_type:
+                # First resolve by name, then filter by type
+                matches = resolve_byprop("name", self.stream_name, timeout=0.5)
+                matches = [m for m in matches if m.type() == self.stream_type]
+            elif self.stream_name:
+                matches = resolve_byprop("name", self.stream_name, timeout=0.5)
+            elif self.stream_type:
+                matches = resolve_byprop("type", self.stream_type, timeout=0.5)
+            else:
+                matches = resolve_streams(0.5)  # returns all streams
+
+            if matches:
+                return matches[0]
+
+        raise TimeoutError(f"LSL stream not found within {self.timeout_s:.1f}s: {pred_str}")
+
+    def _run_loop(self) -> None:
+        inlet = self._inlet
+        assert inlet is not None
+
+        # First pull to mark ready
+        while not self._stop.is_set():
+            chunk, ts = inlet.pull_chunk(timeout=self.pull_timeout)
+            if chunk:
+                self._append_chunk(np.asarray(chunk, dtype=np.float32).T, np.asarray(ts, dtype=np.float64))
+                self.ready_event.set()
+                break
+
+        # Main loop
+        while not self._stop.is_set():
+            chunk, ts = inlet.pull_chunk(timeout=self.pull_timeout)
+            if not chunk:
+                continue
+            y = np.asarray(chunk, dtype=np.float32).T  # (C×B)
+            t = np.asarray(ts, dtype=np.float64)       # (B,)
+            self._append_chunk(y, t)
+
+    def _append_chunk(self, y: np.ndarray, t: np.ndarray) -> None:
+        assert self._buf_y is not None and self._buf_t is not None
+        C, B = y.shape
+        assert C == self._buf_y.shape[0], f"Channel mismatch: got {C}, expected {self._buf_y.shape[0]}"
+        N = self._buf_t.size
+
+        with self._lock:
+            end = (self._widx + B) % N
+            if self._widx + B <= N:
+                self._buf_y[:, self._widx : self._widx + B] = y
+                self._buf_t[self._widx : self._widx + B] = t
+            else:
+                k1 = N - self._widx
+                self._buf_y[:, self._widx:] = y[:, :k1]
+                self._buf_t[self._widx:] = t[:k1]
+                self._buf_y[:, :end] = y[:, k1:]
+                self._buf_t[:end] = t[k1:]
+            self._widx = end
+            self._count = min(N, self._count + B)

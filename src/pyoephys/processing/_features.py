@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.signal import hilbert
+from typing import Callable, Dict, List, Union
 
 
 # Deflationary orthogonality
@@ -425,3 +426,39 @@ def extract_features_sliding_window(data: np.ndarray, fs: float, window_ms: floa
         feats.append(fv)
 
     return np.vstack(feats)  # shape (n_windows, n_features)
+
+
+def feature_spec_from_registry(
+    feature_registry: Dict[str, Callable],
+    feature_fns: List[Union[str, Callable]] | None = None,
+    *,
+    per_channel: bool = True,
+    layout: str = "channel_major",   # [ch0 feats..., ch1 feats..., ...]
+    channels: str = "training_order" # clarifies feature vector is built in training channel order
+) -> Dict:
+    """
+    Build a self-describing spec for your feature vector.
+
+    If feature_fns is None, we assume 'use all' features in the registry, in the
+    registry's key order.
+    """
+    if feature_fns is None:
+        names = list(feature_registry.keys())
+    else:
+        names = []
+        for fn in feature_fns:
+            if isinstance(fn, str):
+                names.append(fn)
+            else:
+                names.append(getattr(fn, "__name__", str(fn)))
+
+    # In your current registry, each function returns a scalar per-channel.
+    dims_per_feature = {name: 1 for name in names}
+
+    return {
+        "per_channel": bool(per_channel),
+        "order": names,                 # feature names in the order they were concatenated
+        "dims_per_feature": dims_per_feature,
+        "layout": layout,
+        "channels": channels            # how channels were ordered when flattening
+    }

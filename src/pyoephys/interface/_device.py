@@ -3,7 +3,7 @@ import zmq
 import time
 import uuid
 import json
-from threading import Thread, Lock
+import threading
 from collections import deque
 from ._gui_client import GUIClient
 from ._gui_events import Event, Spike
@@ -22,19 +22,19 @@ class OpenEphysDevice(GUIClient):
         ip (str): IP address or ZMQ prefix (default 'tcp://localhost')
         data_port (int): Port number for ZMQ data stream
         heartbeat_port (int): Port number for heartbeat messages
-        num_channels (int): Number of channels to collect
+        n_channels (int): Number of channels to collect
         sample_rate (float): Approximate sample rate in Hz (Open Ephys does not send this directly)
         buffer_duration_sec (int): Circular buffer length in seconds
         verbose (bool): Print debug information
     """
     def __init__(self, zqm_ip="tcp://localhost", http_ip="127.0.0.1", data_port=5556, heartbeat_port=5557,
-                 num_channels=128, sample_rate=2000.0, buffer_duration_sec=5, verbose=False):
+                 n_channels=128, sample_rate=2000.0, buffer_duration_sec=5, auto_start=True, verbose=False):
         super().__init__(host=http_ip)
         self.ip = zqm_ip
         self.data_port = data_port
         self.heartbeat_port = heartbeat_port
-        self.num_channels = num_channels
-        self.sample_rate = sample_rate
+        self.n_channels = n_channels
+        self.sampling_rate = sample_rate
         self.buffer_duration_sec = buffer_duration_sec
         self.verbose = verbose
 
@@ -45,12 +45,12 @@ class OpenEphysDevice(GUIClient):
         self.socket_waits_reply = False
 
         # Buffers
-        self.buffers = [deque(maxlen=int(sample_rate * buffer_duration_sec)) for _ in range(num_channels)]
-        self.last_buffer_lens = [0] * self.num_channels
-        self.circular_buffer = np.zeros((num_channels, int(sample_rate * buffer_duration_sec)), dtype=np.float32)
+        self.buffers = [deque(maxlen=int(sample_rate * buffer_duration_sec)) for _ in range(n_channels)]
+        self.last_buffer_lens = [0] * self.n_channels
+        self.circular_buffer = np.zeros((n_channels, int(sample_rate * buffer_duration_sec)), dtype=np.float32)
         self.circular_idx = 0
         self.total_samples_written = 0  # Track total samples for proper indexing
-        self.buffer_lock = Lock()
+        self.lock = threading.Lock()
 
         # Connection status tracking
         self.connection_lost = False
@@ -66,6 +66,9 @@ class OpenEphysDevice(GUIClient):
         self.heartbeat_socket = None
         self.data_socket = None
         self.initialize_sockets()
+
+        if auto_start:
+            self.start_streaming()
 
     def initialize_sockets(self):
         """Initialize the data socket with improved error handling"""
@@ -145,25 +148,33 @@ class OpenEphysDevice(GUIClient):
             # self._reconnect_sockets()
 
     def _streaming_worker(self):
-        while self.streaming:
 
-            # Handle reconnection as needed
-            if self.connection_lost:
-                if not self._reconnect_sockets():
-                    #print("[Streaming] Connection lost. Stopping streaming.")
-                    #self.stop_streaming()
-                    #continue
-                    time.sleep(1)
+        print("[ZMQClient] Streaming worker started.")
+        try:
+            while self.streaming:
+
+                # Handle reconnection as needed
+                if self.connection_lost:
+                    if self.verbose: print("[ZMQClient] Attempting reconnection...")
+                    if not self._reconnect_sockets():
+                        print("[ZMQClient] Reconnection failed. Retrying...")
+                        #print("[Streaming] Connection lost. Stopping streaming.")
+                        #self.stop_streaming()
+                        continue
+
+                if (time.time() - self.last_heartbeat_time) > 2:
+                    if self.verbose: print("[ZMQClient] Sending heartbeat...")
+                    self._send_heartbeat()
+
+                socks = dict(self.poller.poll(10))
+                if not socks:
+                    if self.verbose: print(f"[ZMQClient] poll() timeout: No messages received at {time.time():.2f}")
                     continue
 
-            if (time.time() - self.last_heartbeat_time) > 2:
-                self._send_heartbeat()
-
-            try:
-                socks = dict(self.poller.poll(10))
                 if self.data_socket in socks:
                     try:
                         msg = self.data_socket.recv_multipart(zmq.NOBLOCK)
+                        if self.verbose: print(f"[ZMQClient] Received ZMQ multipart msg of length {len(msg)} at {time.time():.2f}")
                         if len(msg) < 2:
                             continue
 
@@ -174,9 +185,12 @@ class OpenEphysDevice(GUIClient):
                             content = header['content']
                             ch = content['channel_num']
                             samples = np.frombuffer(msg[2], dtype=np.float32)
+                            n = len(samples)
 
-                            if 0 <= ch < self.num_channels:
-                                with (self.buffer_lock):
+                            if self.verbose: print(f"[ZMQClient] DATA msg | ch: {ch}, samples: {n} @ {time.time():.2f}")
+
+                            if isinstance(ch, int) and 0 <= ch < self.n_channels:
+                                with self.lock:
                                     self.buffers[ch].extend(samples)
 
                                     # Write into circular_buffer
@@ -201,48 +215,54 @@ class OpenEphysDevice(GUIClient):
                                         self.total_samples_written += n
                                         self.circular_idx = self.total_samples_written % buf_len
 
-                                if self.verbose:
-                                    print(f"[Data] Ch {ch}: {len(samples)} samples")
+                                if self.verbose: print(f"[Data] Ch {ch}: {len(samples)} samples")
+
+                            else:
+                                if self.verbose: print(f"[ZMQClient] Invalid channel index: {ch}")
 
                         elif header['type'] == 'event':
                             evt = Event(header['content'], msg[2] if header['data_size'] > 0 else None)
-                            if self.verbose:
-                                print(evt)
+                            if self.verbose: print(f"[ZMQClient] EVENT received: {evt}")
 
                         elif header['type'] == 'spike':
                             spk = Spike(header['spike'], msg[2])
-                            if self.verbose:
-                                print(spk)
+                            if self.verbose: print(f"[ZMQClient] SPIKE received: {spk}")
+
+                        else:
+                            if self.verbose: print(f"[ZMQClient] Unknown message type: {header['type']}")
 
                     except zmq.Again:
-                        pass
+                        print("[ZMQClient] zmq.Again: No data received")
 
                     except Exception as e:
-                        print(f"[Data Error] {e}")
+                        print(f"[ZMQClient] Error reading data_socket: {e}")
 
                 if self.heartbeat_socket in socks and self.socket_waits_reply:
                     try:
                         _ = self.heartbeat_socket.recv()
                         self.socket_waits_reply = False
                         self.last_reply_time = time.time()
+                        if self.verbose: print("[ZMQClient] Heartbeat acknowledged.")
+
                     except zmq.Again:
-                        pass
+                        if self.verbose: print("[ZMQClient] Heartbeat socket no reply.")
+
                     except Exception as e:
                         print(f"[Heartbeat Error] {e}")
                         self.connection_lost = True
                         # self._reconnect_sockets()
 
-            except Exception as e:
-                print(f"Streaming worker error: {e}")
-                self.connection_lost = True
-                time.sleep(0.1)
+        except Exception as e:
+            print(f"Streaming worker error: {e}")
+            self.connection_lost = True
+            time.sleep(0.1)
 
     def start_streaming(self):
         if self.streaming:
             print("Already streaming")
             return
         self.streaming = True
-        self.streaming_thread = Thread(target=self._streaming_worker, daemon=True)
+        self.streaming_thread = threading.Thread(target=self._streaming_worker, daemon=True)
         self.streaming_thread.start()
 
     def stop_streaming(self):
@@ -250,15 +270,15 @@ class OpenEphysDevice(GUIClient):
         if self.streaming_thread:
             self.streaming_thread.join()
 
-    def get_latest_window(self, duration_ms):
+    def get_latest_window(self, window_ms):
         """ Get most recent window of data"""
-        num_samples = int(self.sample_rate * duration_ms / 1000)
+        num_samples = int(self.sampling_rate * window_ms / 1000)
         buf_len = self.circular_buffer.shape[1]
 
-        with self.buffer_lock:
+        with self.lock:
             available_samples = min(self.total_samples_written, buf_len)
             if available_samples == 0:
-                return np.zeros((self.num_channels, 0), dtype=np.float32)
+                return np.zeros((self.n_channels, 0), dtype=np.float32)
 
             # Clamp requested samples to available
             num_samples = min(num_samples, available_samples)
@@ -276,9 +296,9 @@ class OpenEphysDevice(GUIClient):
 
     def get_latest_sample(self):
         """ Get most recent sample from all channels"""
-        with self.buffer_lock:
+        with self.lock:
             if self.total_samples_written == 0:
-                return np.zeros(self.num_channels, dtype=np.float32)
+                return np.zeros(self.n_channels, dtype=np.float32)
 
             latest_idx = (self.total_samples_written - 1) % self.circular_buffer.shape[1]
             return self.circular_buffer[:, latest_idx].copy()
@@ -294,8 +314,8 @@ class OpenEphysDevice(GUIClient):
         Returns:
             np.ndarray: EMG data array of shape (channels, samples)
         """
-        total_samples = int(self.sample_rate * duration_sec)
-        collected_emg = np.zeros((self.num_channels, total_samples), dtype=np.float32)
+        total_samples = int(self.sampling_rate * duration_sec)
+        collected_emg = np.zeros((self.n_channels, total_samples), dtype=np.float32)
         write_index = 0
 
         # TO-DO: Send the record command to the gui
@@ -306,7 +326,7 @@ class OpenEphysDevice(GUIClient):
         samples_collected = 0
 
         # Record start position to avoid collecting old data
-        with self.buffer_lock:
+        with self.lock:
             start_sample_count = self.total_samples_written
 
         while samples_collected < total_samples:
@@ -314,12 +334,12 @@ class OpenEphysDevice(GUIClient):
             elapsed = current_time - start_time
 
             # Calculate expected samples based on elapsed time
-            expected_samples = int(elapsed * self.sample_rate)
+            expected_samples = int(elapsed * self.sampling_rate)
             expected_samples = min(expected_samples, total_samples)
 
             if expected_samples > samples_collected:
                 # Get new samples since recording started
-                with self.buffer_lock:
+                with self.lock:
                     available_new_samples = self.total_samples_written - start_sample_count
 
                 if available_new_samples > samples_collected:
@@ -328,7 +348,7 @@ class OpenEphysDevice(GUIClient):
 
                     if samples_to_get > 0:
                         # Get the specific range of new samples
-                        window = self.get_latest_window(int(samples_to_get * 1000 / self.sample_rate))
+                        window = self.get_latest_window(int(samples_to_get * 1000 / self.sampling_rate))
                         if window.shape[1] >= samples_to_get:
                             end_idx = samples_collected + samples_to_get
                             collected_emg[:, samples_collected:end_idx] = window[:, -samples_to_get:]
@@ -340,7 +360,7 @@ class OpenEphysDevice(GUIClient):
 
     def record_to_file(self, path, duration_sec=10):
         emg = self.record(duration_sec)
-        np.savez(path, emg=emg, sample_rate=self.sample_rate)
+        np.savez(path, emg=emg, sample_rate=self.sampling_rate)
         if self.verbose:
             print(f"[Saved] {path}")
 

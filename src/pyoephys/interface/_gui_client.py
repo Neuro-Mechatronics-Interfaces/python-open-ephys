@@ -14,6 +14,9 @@ class GUIClient:
     def stop_acquisition(self):
         return self.server.idle()
 
+    def idle(self):
+        return self.server.idle()
+
     def status(self):
         return self.server.status()
 

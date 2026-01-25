@@ -1,6 +1,6 @@
 import argparse
-from src.old_utils.ephys_utilities import OpenEphysClient
-from pyoephys.plotting import RealtimePlotter
+from pyoephys.interface import OpenEphysDevice
+#from pyoephys.plotting import RealtimePlotter
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -8,7 +8,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # 1. Create OpenEphysClient instance
-    client = OpenEphysClient(data_port=5556, verbose=args.verbose)
+    client = OpenEphysDevice(data_port=5556, verbose=args.verbose)
 
     # 2. Create the real-time plotter
     plotter = RealtimePlotter(

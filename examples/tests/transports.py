@@ -1,6 +1,7 @@
+
 # transports.py
 # Cross-transport helpers for sending LED commands to your Pico server.
-# Supports UDP and USB Serial (pyserial). No newline required; commands end with ';'.
+# Supports UDP and USB Serial (pyserial). Commands end with ';' (no newline).
 import time
 import socket
 

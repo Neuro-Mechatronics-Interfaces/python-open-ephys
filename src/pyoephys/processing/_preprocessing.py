@@ -1,110 +1,181 @@
 import numpy as np
+from typing import Callable, List, Union, Dict, Optional
 from tqdm import tqdm
-from handtrack.processing import (
-    notch_filter,
-    bandpass_filter,
-    lowpass_filter,
-    rectify,
-    extract_features
-)
+from ._features import rectify, extract_features, feature_spec_from_registry, FEATURE_REGISTRY
+from ._realtime_filter import RealtimeFilter
+from scipy.signal import butter, sosfilt, sosfilt_zi
 
 
 class EMGPreprocessor:
-    def __init__(self, fs=5000, band=(20, 450), notch_freq=60, envelope_cutoff=5, verbose=False):
-        self.fs = fs
-        self.band = band
-        self.notch_freq = notch_freq
-        self.envelope_cutoff = envelope_cutoff
-        self.verbose = verbose
+    """
+    Streaming-safe EMG pipeline:
 
-    def preprocess(self, emg):
+      1) Band-pass (default 20–498 Hz) + 60 Hz notch (and harmonics if configured)
+      2) Rectify (|x|)
+      3) Low-pass envelope (default off, e.g. 5–10 Hz for gestures)
+
+    Shapes are (C, N) throughout. Keeps filter state across calls for realtime use,
+    but also works offline on full arrays in one call.
+    """
+
+    def __init__(self, fs: float = 5000.0, band: tuple[float, float] = (20.0, 498.0),
+        notch_freqs: tuple[float, ...] = (60.0,), notch_q: float = 30.0, envelope_cutoff: float | None = None,
+        envelope_order: int = 4, feature_fns: List[Union[str, Callable]] | None = None, verbose: bool = False,
+    ):
+        self.fs = float(fs)
+        self.band = (float(band[0]), float(band[1]))
+        self.notch_freqs = tuple(float(f) for f in notch_freqs)
+        self.notch_q = float(notch_q)
+        self.verbose = bool(verbose)
+
+        # front-end filter: band-pass + notch (no low-pass here)
+        self.frontend: RealtimeFilter | None = None  # lazy init when we see channel count
+
+        # envelope LP stage (after rectification)
+        self.env_cut = envelope_cutoff
+        self.env_order = int(envelope_order)
+        self._env_sos = None
+        self._env_zi = None   # shape (n_sections, C, 2)
+        self._C = None        # channel count we’re initialized for
+
+        # Features
+        self.feature_fns = feature_fns
+        if self.feature_fns is None:
+            self._feature_names = list(FEATURE_REGISTRY.keys())
+        else:
+            self._feature_names = [fn if isinstance(fn, str) else fn.__name__ for fn in self.feature_fns]
+            # ensure all feature names are registered
+            for fn in self.feature_fns:
+                if isinstance(fn, str) and fn not in FEATURE_REGISTRY:
+                    raise ValueError(f"Feature function '{fn}' is not registered in FEATURE_REGISTRY.")
+
+    def _ensure_initialized(self, C: int):
+        if self._C == C and self.frontend is not None:
+            return
+        self._C = int(C)
+
+        # build / reset the front-end
+        self.frontend = RealtimeFilter(
+            fs=self.fs,
+            n_channels=self._C,
+            bp_low=self.band[0],
+            bp_high=self.band[1],
+            bp_order=4,
+            enable_bandpass=True,
+            notch_freqs=self.notch_freqs,
+            notch_q=self.notch_q,
+            enable_notch=True,
+            enable_lowpass=False,  # low-pass happens AFTER rectify
+        )
+
+        # (re)build envelope LP
+        if self.env_cut is not None:
+            self._env_sos = butter(self.env_order, self.env_cut, btype="low", fs=self.fs, output="sos")
+            # zi per section per channel
+            base_zi = sosfilt_zi(self._env_sos)[:, None, :]  # (nsec, 1, 2)
+            self._env_zi = np.tile(base_zi, (1, self._C, 1)).astype(np.float32)
+        else:
+            self._env_sos = None
+            self._env_zi = None
+
+    def reset_states(self):
+        """Zero internal state for both front-end and envelope LP."""
+        if self.frontend is not None:
+            self.frontend.reset()
+        if self._env_sos is not None and self._env_zi is not None:
+            base_zi = sosfilt_zi(self._env_sos)[:, None, :]
+            self._env_zi[:] = np.tile(base_zi, (1, self._C, 1))
+
+    # ---------- public API ----------
+
+    def preprocess(self, emg: np.ndarray, *, rectify: bool = True, envelope_cutoff: float | None = None) -> np.ndarray:
         """
-        Applies filtering pipeline:
-        1. Notch filter at 60Hz
-        2. Bandpass filter
-        3. Rectify
-        4. Lowpass filter to get envelope
+        Offline OR streaming-compatible preprocess of a (C, N) block:
+
+          bandpass+notch -> (rectify) -> (low-pass envelope)
+
+        If `envelope_cutoff` is provided, it overrides the constructor’s default for this call.
         """
-        if self.verbose:
-            print("\n================== EMG Preprocessing ================")
-            print("|  Preprocessing EMG data...")
-            print(f"|  |__  Sampling frequency: {self.fs} Hz")
-            print(f"|  |__  Notch frequency: {self.notch_freq} Hz")
-            print(f"|  |__  Bandpass filter: {self.band[0]}-{self.band[1]} Hz")
-            print(f"|  |__  Envelope cutoff: {self.envelope_cutoff} Hz")
+        emg = np.asarray(emg, dtype=np.float32)
+        if emg.ndim != 2:
+            raise ValueError(f"Expected (C, N) array; got {emg.shape}")
+        C = emg.shape[0]
+        self._ensure_initialized(C)
 
-        emg = notch_filter(emg, self.fs, self.notch_freq)
-        emg = bandpass_filter(emg, self.band[0], self.band[1], self.fs)
-        emg = rectify(emg)
-        return lowpass_filter(emg, self.envelope_cutoff, self.fs)
+        # 1) front-end (stateful)
+        y = self.frontend.process(emg)
 
-    def extract_emg_features(self, emg, start_index=0, end_index=None, window_ms=100, step_ms=20):
+        # 2) rectify
+        if rectify:
+            y = np.abs(y)
+
+        # 3) envelope LP (stateful)
+        cut = self.env_cut if envelope_cutoff is None else envelope_cutoff
+        if cut is not None:
+            if self._env_sos is None or cut != self.env_cut or self._env_zi is None or self._env_zi.shape[1] != C:
+                # rebuild LP if cutoff changed or channels changed
+                self.env_cut = float(cut)
+                self._C = None  # force rebuild path to set env with new cut
+                self._ensure_initialized(C)
+            # per-channel
+            for ch in range(C):
+                y[ch, :], self._env_zi[:, ch, :] = sosfilt(self._env_sos, y[ch, :], zi=self._env_zi[:, ch, :])
+        return y
+
+    def extract_emg_features(self, emg: np.ndarray, window_ms: int = 200, step_ms: int = 50, feature_fns=None,
+                             return_windows: bool = False, *, progress: bool = False, tqdm_kwargs: dict | None = None):
         """
-        Applies rolling window feature extraction to the preprocessed EMG data.
+        Sliding-window feature extraction over a preprocessed EMG trace.
+        Returns (n_windows, n_features) (and window start indices if return_windows=True).
 
-        Args:
-            emg (np.ndarray): Preprocessed EMG data of shape (num_channels, num_samples).
-            window_ms (int): Size of the rolling window in milliseconds.
-            step_ms (int): Step size for the rolling window in milliseconds.
-
-        Returns:
-            features (np.ndarray): Extracted features of shape (num_windows, num_features).
+        Set progress=True to show a tqdm progress bar (ETA, rate, etc.).
+        Pass extra bar options via tqdm_kwargs (e.g., {'desc': 'EMG', 'leave': False}).
 
         """
-        if self.verbose:
-            print(f"\n=================== EMG Features ==================")
-            print(f"|  Extracting features with window size {window_ms}ms and step size {step_ms}ms...")
+        fs = self.fs
+        w = int(window_ms * fs / 1000)
+        s = int(step_ms * fs / 1000)
+        n_samps = emg.shape[1]
+        if n_samps < w:
+            return (np.zeros((0,)), np.array([], dtype=int)) if return_windows else np.zeros((0,))
 
-        window_size = int(window_ms * self.fs / 1000)
-        step_size = int(step_ms * self.fs / 1000)
+        starts = np.arange(0, n_samps - w + 1, s, dtype=int)
+        n_win = starts.size
+        if n_win == 0:
+            return (np.zeros((0,)), np.array([], dtype=int)) if return_windows else np.zeros((0,))
 
-        if start_index is None:
-            start_index = 0
-        if end_index is None:
-            end_index = emg.shape[1] - window_size + 1
+        # Compute first window to determine feature length & dtype, then preallocate
+        f0 = extract_features(emg[:, starts[0]: starts[0] + w], feature_fns)
+        f0 = np.asarray(f0)
+        X = np.empty((n_win, f0.size), dtype=f0.dtype)
+        X[0] = f0
 
-        if start_index < 0 or start_index >= emg.shape[1]:
-            raise ValueError(f"start_index {start_index} is out of bounds for EMG data with shape {emg.shape}")
+        it = range(1, n_win)
+        if progress and tqdm is not None:
+            kw = {'total': n_win - 1, 'desc': 'EMG features', 'unit': 'win'}
+            if tqdm_kwargs:
+                kw.update(tqdm_kwargs)
+            it = tqdm(it, **kw)
 
-        if window_size <= 0 or step_size <= 0:
-            raise ValueError(f"Invalid window size {window_size} or step size {step_size}")
-        if self.verbose:
-            print(f"|  Window size: {window_size} samples, Step size: {step_size} samples")
-            print(f"|  EMG data shape: {emg.shape}, starting from index {start_index}")
+        for idx in it:
+            i = starts[idx]
+            X[idx] = extract_features(emg[:, i:i + w], feature_fns)
 
-        if end_index is None:
-            end_index = emg.shape[1] - window_size + 1
-            print(f"|  No end index provided, using full EMG data up to {end_index} samples.")
+        if return_windows:
+            return X, starts
+        return X
 
-        # if the end index exceeds the EMG data length, adjust it
-        if end_index <= start_index:
-            raise ValueError(f"End index {end_index} must be greater than start index {start_index} for window size {window_size}")
-        #n_features = int(() / step_size) + 1
-        #if self.verbose:
-        #    print(f"|  Extracting {n_features} features from EMG data with shape {emg.shape}...")
 
-        features = []
-        for start in tqdm(range(start_index, end_index - window_size + 1, step_size), desc="|  Extracting features"):
-            end = start + window_size
-            features.append(extract_features(emg[:, start:end]))
-
-        features = np.array(features)
-        if self.verbose:
-            print(f"|  Features collected, shape: {features.shape}")
-
-        return features
-
-    def extract_features_static(self, emg):
-        """
-        Extracts features from a static EMG window.
-        Returns: (num_features)
-        """
-        if self.verbose:
-            print(f"|  Extracting static features from EMG window of shape {emg.shape}...")
-
-        features = extract_features(emg)
-
-        if self.verbose:
-            print(f"|  Static features extracted, shape: {features.shape}")
-
-        return features
+    def feature_spec(self, n_channels: Optional[int] = None) -> Dict:
+        spec = feature_spec_from_registry(
+            FEATURE_REGISTRY,
+            self._feature_names,  # use the exact names we enabled
+            per_channel=True,
+            layout="channel_major",
+            channels="training_order",
+        )
+        # add convenience counts (handy for validation)
+        if n_channels is not None:
+            spec["n_channels"] = int(n_channels)
+            spec["n_features_per_channel"] = len(self._feature_names)
+        return spec

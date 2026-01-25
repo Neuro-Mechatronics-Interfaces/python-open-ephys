@@ -2,7 +2,7 @@
 Demo that shows how to load data from a .oebin file using pyoephys.
 """
 import os
-from src.pyoephys.io import load_oebin_file, save_as_npz
+from pyoephys.io import load_oebin_file, save_as_npz
 
 if __name__ == "__main__":
 
@@ -11,7 +11,8 @@ if __name__ == "__main__":
     # ================ Load the data ================
     #path = r'G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_06_13\raw\Dynamic5kHz\Record Node 101\experiment2\recording1\structure.oebin'
     #path = r'G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\Open_Ephys\Jonathan\2025_05_07\raw\DynamicFingers\Record Node 105\experiment1\recording1\structure.oebin'
-    path = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_06_13\raw\Dynamic1kHz\Record Node 101\experiment1\recording1\structure.oebin"
+    #path = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_06_13\raw\Dynamic1kHz\Record Node 101\experiment1\recording1\structure.oebin"
+    path = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_07_31\raw"
     result = load_oebin_file(path)  # We can use the file dialog to select the directory
 
     # ================ Print some info ================

@@ -1,12 +1,6 @@
 """
-pyoephys: Python interface for reading, processing, and visualizing data
-from the Open Ephys acquisition systems.
-
-This package includes modules for:
-- Reading and parsing `.oebin` and `.rec` files
-- Streamed acquisition via TCP/IP from the Intan RHX software
-- Visualization of high-density EMG or LFP signals
-- Configuration and device control
+pyoephys: Python tools for reading, streaming, processing, and visualizing
+Open Ephys and related electrophysiology data.
 """
 
 __version__ = "0.0.1"
@@ -16,18 +10,13 @@ __license__ = "MIT"
 __url__ = "https://github.com/jshulgach/intan-python"
 __description__ = "Python interface for streaming, parsing, and analyzing Open Ephys files"
 
-import importlib as _importlib
-
 submodules = [
-    # 'decomposition',
     'applications',
-    'io',
-    #'plotting',
-    # 'control',
-    'processing',
     'interface',
-    #'samples',
-    # 'stream',
+    'io',
+    'ml',
+    'plotting',
+    'processing',
 ]
 
 __all__ = submodules + [

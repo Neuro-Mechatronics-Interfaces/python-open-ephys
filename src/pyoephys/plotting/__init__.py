@@ -1,1 +1,6 @@
-from ._realtime_plotter import RealtimePlotter
+from ._stacked_plot import (
+    #StackedPlotter,
+    # RealtimePlotter
+    #RollingPlot,
+    StackedPlot,
+)
