@@ -14,7 +14,7 @@ except ImportError:
 __author__ = "Jonathan Shulgach"
 __email__ = "jshulgac@andrew.cmu.edu"
 __license__ = "MIT"
-__url__ = "https://github.com/jshulgach/intan-python"
+__url__ = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys"
 __description__ = "Python interface for streaming, parsing, and analyzing Open Ephys files"
 
 submodules = [

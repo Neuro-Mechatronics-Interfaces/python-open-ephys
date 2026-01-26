@@ -30,6 +30,12 @@ dependencies = [
     "open-ephys-python-tools",
     "pylsl",
 ]
+[project.urls]
+Homepage = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys"
+Documentation = "https://neuro-mechatronics-interfaces.github.io/python-open-ephys/"
+Repository = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys.git"
+Issues = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys/issues"
+
 # dynamic = ["version"]
 
 [build-system]

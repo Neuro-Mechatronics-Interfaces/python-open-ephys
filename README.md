@@ -1,8 +1,12 @@
+![Logo](https://raw.githubusercontent.com/Neuro-Mechatronics-Interfaces/python-open-ephys/main/docs/figs/logo.jpg)
+
 # Python OEphys
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://neuro-mechatronics-interfaces.github.io/python-open-ephys/)
+[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![PyPI version](https://badge.fury.io/py/python-oephys.svg)](https://badge.fury.io/py/python-oephys)
+[![Downloads](https://pepy.tech/badge/python-oephys)](https://pepy.tech/project/python-oephys)
 
 **python-oephys** is a comprehensive Python toolkit for working with Open Ephys devices and electrophysiology data. From file loading to real-time ZMQ streaming, signal processing to machine learning, and visualization tools—everything you need for high-density neural data analysis in one package.
 
