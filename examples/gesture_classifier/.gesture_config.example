@@ -1,0 +1,50 @@
+# EMG Gesture Classifier Configuration (Open Ephys)
+# =================================================
+
+# Root directory containing Open Ephys recordings (parent of data subfolders)
+root_dir=./data
+
+# Model label (used for naming output files, e.g., 'model/128ch_model.pkl')
+label=demo_model
+
+# Enable verbose logging
+verbose=true
+
+# ============================================================================
+# Dataset Building (1_build_dataset.py)
+# ============================================================================
+
+# Output path for the training dataset (.npz)
+# If not specified, defaults to {root_dir}/training_dataset.npz
+save_path=./data/training_dataset.npz
+
+# Feature extraction settings
+window_ms=200
+step_ms=50
+
+# ============================================================================
+# Training (2_train_model.py)
+# ============================================================================
+
+# Number of training epochs
+epochs=100
+
+# Batch size
+batch_size=32
+
+# Learning rate
+learning_rate=0.001
+
+# Use K-Fold Cross Validation? (true/false)
+kfold=true
+
+# ============================================================================
+# Prediction (3_predict_realtime.py)
+# ============================================================================
+
+# ZMQ connection
+zmq_ip=tcp://127.0.0.1
+zmq_port=5556
+
+# Inference Smoothing
+smooth_k=5
