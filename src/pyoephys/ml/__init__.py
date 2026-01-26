@@ -1,3 +1,6 @@
+"""
+Machine Learning models and utilities for gesture classification.
+"""
 from ._models import (
     EMGRegressor,
     EMGClassifier,

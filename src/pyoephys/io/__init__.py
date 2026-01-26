@@ -1,3 +1,6 @@
+"""
+Input and Output (IO) utilities for Open Ephys and NPZ data.
+"""
 from ._session_loader import load_open_ephys_session
 from ._file_utils import (
     find_oebin_files,

@@ -1,3 +1,6 @@
+"""
+Signal processing, filtering, and feature extraction.
+"""
 from ._metrics_utils import load_metrics_data, get_metrics_file
 from ._filters import (
     bandpass_filter,

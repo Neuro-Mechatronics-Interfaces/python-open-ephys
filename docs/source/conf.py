@@ -4,10 +4,11 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('../../src'))
 
+import pyoephys
 project = 'python-oephys'
 copyright = '2025, Jonathan Shulgach'
 author = 'Jonathan Shulgach'
-release = '0.0.1'
+release = pyoephys.__version__
 
 extensions = [
     'sphinx.ext.autodoc',

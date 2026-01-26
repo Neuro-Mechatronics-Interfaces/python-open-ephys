@@ -1,3 +1,6 @@
+"""
+Hardware interfaces for ZMQ, LSL, and Open Ephys GUI.
+"""
 from ._gui_client import GUIClient
 from ._gui_events import Event, Spike
 from ._device import OpenEphysDevice

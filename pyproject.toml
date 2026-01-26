@@ -37,6 +37,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 write_to = "src/pyoephys/_version.py"
+local_scheme = "no-local-version"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
