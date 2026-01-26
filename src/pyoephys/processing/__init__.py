@@ -29,6 +29,7 @@ from ._features import (
     extract_features_sliding_window,
     feature_spec_from_registry,
     compute_rms,
+    calculate_rms,
     window_rms_1D,
     compute_grid_average,
     orthogonalize,
