@@ -80,3 +80,9 @@ pip-delete-this-directory.txt
 
 # Old utilities
 src/old_utils/
+
+# Local secrets & environment variables
+.env
+.secrets
+.tokens
+.pypirc_local

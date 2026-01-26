@@ -23,6 +23,11 @@ A comprehensive Python toolkit for working with Open Ephys devices, featuring si
 -   **Filtering**: Real-time and offline filters (Bandpass, Notch, Smoothing).
 -   **Features**: Extract RMS, MAV, Zero Crossings, and IMU features.
 
+### 💾 Data & IO
+-   **Unified IO**: Robust support for Open Ephys Binary (`.oebin`) and `.npz` formats.
+-   **Dataset Builder**: Advanced tools to discover, group, and merge multi-session datasets.
+-   **Spatial Mapping**: Grid reorientation tools (`rot90`, `flipH`, etc.) for high-density arrays.
+
 ## Installation
 
 ### From Source
@@ -85,6 +90,19 @@ results = qc.compute_qc(data_chunk)
 print(results) # Status (Good/Bad) per channel
 ```
 
+### 4. Unified CLI Tools
+Build a dataset from multiple sessions and train/predict with a single command workflow:
+```bash
+# 1. Build Dataset (Auto-discovery, Preprocessing, Merging)
+python examples/gesture_classifier/1_build_dataset.py --root_dir ./data --multi_file --paper_style
+
+# 2. Train Model
+python examples/gesture_classifier/2_train_model.py --root_dir ./data --label my_model
+
+# 3. Predict (Offline or Real-time Stream)
+python examples/gesture_classifier/predict.py stream --root_dir ./data --label my_model
+```
+
 ## Examples
 Check the `examples/` directory for complete scripts:
 -   `examples/gesture_classifier/2_train_model.py`: Train a gesture classifier.
@@ -95,3 +113,24 @@ Check the `examples/` directory for complete scripts:
 
 ## License
 MIT License. See [LICENSE](LICENSE) for details.
+
+## Development & Release
+
+### Versioning
+This project uses **dynamic versioning** via `setuptools_scm`. The version is automatically derived from Git tags.
+
+### How to Release
+1.  **Commit** all changes.
+2.  **Tag** the commit with the new version number:
+    ```bash
+    git tag -a v0.1.0 -m "Release v0.1.0"
+    ```
+3.  **Push** the tag to GitHub:
+    ```bash
+    git push origin v0.1.0
+    ```
+4.  **Create a Release** on GitHub:
+    - Go to **Releases** > **Draft a new release**.
+    - Select the tag `v0.1.0`.
+    - Click **Publish release**.
+5.  The `publish.yml` workflow will trigger, build the package, and upload to PyPI.

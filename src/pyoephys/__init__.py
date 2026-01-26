@@ -3,7 +3,14 @@ pyoephys: Python tools for reading, streaming, processing, and visualizing
 Open Ephys and related electrophysiology data.
 """
 
-__version__ = "0.0.1"
+try:
+    from ._version import version as __version__
+except ImportError:
+    try:
+        from importlib.metadata import version, PackageNotFoundError
+        __version__ = version("python-oephys")
+    except (ImportError, PackageNotFoundError):
+        __version__ = "0.0.0+unknown"
 __author__ = "Jonathan Shulgach"
 __email__ = "jshulgac@andrew.cmu.edu"
 __license__ = "MIT"

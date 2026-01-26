@@ -1,159 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple
-
 import numpy as np
 from scipy.signal import butter, iirnotch, sosfilt, sosfilt_zi, tf2sos
-
-
-
-@dataclass
-class _FilterSpec:
-    fs: float
-    bp: Optional[Tuple[float, float]]
-    notch: Optional[Iterable[float]]
-    order: int = 4
-
-
-class RealtimeEMGFilter:
-    """
-    Stateful, realtime EMG filter: bandpass + multi-notch, with per-channel state.
-
-    Parameters
-    ----------
-    fs : float
-        Sampling rate.
-    bp : (low, high) or None
-        Bandpass edges in Hz. Use None to disable.
-    notch_hz : list[float] | tuple | None
-        One or more notch center frequencies in Hz (e.g., [50] or [60, 120]).
-    order : int
-        Butterworth order for bandpass (>=2 recommended).
-    n_channels : int
-        Number of channels. If None, states are allocated on first call to process().
-    """
-
-    def __init__(
-            self,
-            fs: float,
-            bp: Optional[Tuple[float, float]] = (30.0, 400.0),
-            notch_hz: Optional[Iterable[float]] = (60.0,),
-            order: int = 4,
-            n_channels: Optional[int] = None,
-    ) -> None:
-        self.spec = _FilterSpec(fs=float(fs), bp=bp, notch=tuple(notch_hz) if notch_hz else None, order=int(order))
-        self._sos = self._design_sos(self.spec)
-        self._zi = None  # initialized on first process if n_channels is None
-        if n_channels is not None:
-            self._allocate_state(int(n_channels))
-
-    # ---------- public API ----------
-
-    def reset_state(self) -> None:
-        """Zero the internal filter state."""
-        if self._zi is not None:
-            self._zi[:] = 0.0
-
-    def reconfigure(
-            self,
-            *,
-            fs: Optional[float] = None,
-            bp: Optional[Tuple[float, float] | None] = None,
-            notch_hz: Optional[Iterable[float] | None] = None,
-            order: Optional[int] = None,
-            preserve_state: bool = False,
-            n_channels: Optional[int] = None,
-    ) -> None:
-        """
-        Redesign filters and (optionally) keep state shape.
-
-        If `preserve_state=True` and the number of SOS sections is unchanged,
-        existing zi is reused (safer to reset_state() after big changes).
-        """
-        spec = _FilterSpec(
-            fs=float(fs) if fs is not None else self.spec.fs,
-            bp=bp if bp is not None else self.spec.bp,
-            notch=tuple(notch_hz) if notch_hz is not None else self.spec.notch,
-            order=int(order) if order is not None else self.spec.order,
-        )
-        new_sos = self._design_sos(spec)
-        self.spec = spec
-        if preserve_state and self._zi is not None and new_sos.shape[0] == self._sos.shape[0]:
-            self._sos = new_sos
-        else:
-            self._sos = new_sos
-            if self._zi is not None:
-                # resize state
-                n_ch = self._zi.shape[0]
-                self._allocate_state(n_ch)
-        if n_channels is not None and (self._zi is None or self._zi.shape[0] != int(n_channels)):
-            self._allocate_state(int(n_channels))
-
-    def process(self, x: np.ndarray) -> np.ndarray:
-        """
-        Filter a chunk of data.
-
-        Input:
-            x: shape (C, N)
-        Output:
-            y: shape (C, N)
-        """
-        x = np.asarray(x, dtype=np.float32)
-        assert x.ndim == 2, "Expected (C, N) input array."
-        C, N = x.shape
-        if self._zi is None:
-            self._allocate_state(C)
-        y = np.empty_like(x)
-        # Apply SOS per channel with persistent state
-        for c in range(C):
-            y[c], self._zi[c] = sosfilt(self._sos, x[c], zi=self._zi[c])
-        return y
-
-    # Backwards-compatible alias
-    __call__ = process
-
-    # ---------- internals ----------
-
-    def _allocate_state(self, n_channels: int) -> None:
-        zi_single = sosfilt_zi(self._sos)  # (n_sections, 2)
-        self._zi = np.tile(zi_single[None, :, :], (n_channels, 1, 1)).astype(np.float32)
-
-    def _design_sos(self, spec: _FilterSpec) -> np.ndarray:
-        fs = spec.fs
-        if fs <= 0:
-            raise ValueError("Sampling rate fs must be > 0.")
-        sos_list = []
-
-        # Bandpass
-        if spec.bp is not None:
-            lo, hi = spec.bp
-            if not (0 < lo < hi < fs / 2):
-                # clamp with a warning-like behavior
-                lo = max(1.0, min(lo, fs / 2 - 1.0))
-                hi = max(lo + 1.0, min(hi, fs / 2 - 0.1))
-            sos_list.append(butter(spec.order, [lo, hi], btype="bandpass", fs=fs, output="sos"))
-
-        # Notches
-        if spec.notch:
-            for f0 in spec.notch:
-                if f0 <= 0 or f0 >= fs / 2:
-                    continue
-                # Q ~ 30 is a decent default for mains; adjust as needed
-                bw = 1.0
-                Q = max(5.0, f0 / bw)
-                sos_list.append(iirnotch(f0, Q, fs=fs))
-
-        if not sos_list:
-            # identity
-            return np.array([[1, 0, 0, 1, 0, 0]], dtype=np.float64)
-
-        return np.vstack(sos_list)
-
-
-# Backwards-compatible alias
-#RealtimeFilter = RealtimeEMGFilter
-
 
 class RealtimeFilter:
     """
@@ -221,7 +69,7 @@ class RealtimeFilter:
     def reset(self):
         """Zero the internal filter state (zi) for all stages/channels."""
         for st in self._stages:
-            st["zi"][:] = sosfilt_zi(st["sos"])[:, None, :]
+            st["zi"][:] = np.tile(sosfilt_zi(st["sos"])[:, None, :], (1, self.C, 1))
 
     def process(self, block: np.ndarray) -> np.ndarray:
         """
@@ -283,7 +131,6 @@ class RealtimeFilter:
 
         # initialize zi arrays (n_sections, C, 2)
         for st in self._stages:
-            nsec = st["sos"].shape[0]
             st["zi"] = np.tile(sosfilt_zi(st["sos"])[:, None, :], (1, self.C, 1)).astype(np.float32)
 
         # attempt to preserve state if topology identical
@@ -295,4 +142,3 @@ class RealtimeFilter:
 
     def _mk_stage(self, name, sos):
         return {"name": name, "sos": np.asarray(sos, dtype=np.float64), "zi": None}
-
