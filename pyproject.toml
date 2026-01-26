@@ -1,5 +1,5 @@
 [project]
-name = "python-open-ephys"
+name = "python-oephys"
 version = "0.0.1"
 description = "Python interface and utilities for working with Open Ephys devices and electrophysiology data"
 authors = [

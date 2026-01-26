@@ -522,8 +522,10 @@ class ZMQClient:
     def latest(self) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
         Return (t_rel, Y) like the old client:
-          - t_rel: (M,) seconds ending at 0 ([-window, 0])
-          - Y:     (N_channels, M)
+
+        - t_rel: (M,) seconds ending at 0 ([-window, 0])
+        - Y:     (N_channels, M)
+
         Uses self.N_samples as the window size.
         """
         if self.channel_index is None or len(self.channel_index) == 0:
