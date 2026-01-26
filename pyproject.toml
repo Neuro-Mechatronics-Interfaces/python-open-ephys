@@ -1,5 +1,6 @@
 [project]
 name = "python-oephys"
+version = "0.1.0"
 
 description = "Python interface and utilities for working with Open Ephys devices and electrophysiology data"
 authors = [
@@ -29,7 +30,7 @@ dependencies = [
     "open-ephys-python-tools",
     "pylsl",
 ]
-dynamic = ["version"]
+# dynamic = ["version"]
 
 [build-system]
 requires = ["setuptools>=61.0", "setuptools_scm>=8.0"]
