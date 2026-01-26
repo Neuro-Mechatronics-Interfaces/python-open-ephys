@@ -24,6 +24,8 @@ gesture_classifier/*.png
 # PyTorch models
 gesture_classifier/*.pth
 *.pth
+*.npz
+*.npy
 
 # Temporary files used for debugging
 /temp/
@@ -52,6 +54,7 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.egg
 
 # Unit test / coverage reports
 htmlcov/
@@ -77,6 +80,7 @@ docs/build/*
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+*.log
 
 # Old utilities
 src/old_utils/
@@ -86,3 +90,10 @@ src/old_utils/
 .secrets
 .tokens
 .pypirc_local
+
+# Versioned build directories and artifacts
+python_oephys-*
+python_open_ephys-*
+*.npz
+*.npy
+*.log

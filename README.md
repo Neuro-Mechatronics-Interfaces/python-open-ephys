@@ -108,7 +108,7 @@ Check the `examples/` directory for complete scripts:
 -   `examples/gesture_classifier/2_train_model.py`: Train a gesture classifier.
 -   `examples/synchronization/sync_multimodal_data.py`: Align EMG with 3D hand landmarks.
 -   `examples/analysis/run_channel_qc.py`: Run quality control checks.
--   `examples/interface/zmq_client.py`: Real-time ZMQ client example.
+-   `examples/interface/zmq/zmq_client.py`: Real-time ZMQ client example.
 -   `examples/read_files/example_load_oebin_file.py`: Load Open Ephys data.
 
 ## License

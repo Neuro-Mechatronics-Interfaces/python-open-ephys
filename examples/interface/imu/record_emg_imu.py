@@ -10,7 +10,8 @@ from typing import List, Dict
 
 import numpy as np
 
-from zmq_client import ZMQClient
+from pyoephys.interface import ZMQClient
+import sleeveimu
 from sleeveimu import SleeveIMUClient
 
 

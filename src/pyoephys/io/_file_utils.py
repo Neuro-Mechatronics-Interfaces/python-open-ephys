@@ -117,6 +117,36 @@ def labels_from_events(event_path, window_starts, *, strict_segment=False, fs=20
         y = np.where(ok, y, 'Unknown')
     return y
 
+def parse_event_file(event_path, verbose=False):
+    """
+    Load an event file (.event or .txt) as a pandas DataFrame.
+    Normalizes columns to 'sample_index' and 'label'.
+    """
+    if pd is None:
+        raise ImportError("pandas is required to parse event files")
+    
+    df = pd.read_csv(event_path)
+    
+    # Normalization map
+    rename_map = {
+        "Sample Index": "sample_index",
+        "Label": "label",
+        "timestamp": "sample_index", # Fallback for some formats
+        "event": "label"
+    }
+    
+    current_cols = df.columns.tolist()
+    to_rename = {k: v for k, v in rename_map.items() if k in current_cols and v not in current_cols}
+    if to_rename:
+        df = df.rename(columns=to_rename)
+        
+    if "sample_index" not in df.columns or "label" not in df.columns:
+        if verbose:
+            print(f"[Warning] Event file {event_path} missing required columns. Cols: {df.columns.tolist()}")
+            
+    return df
+
+
 def stem_without_timestamp(path):
     import re
     if hasattr(path, "item"):

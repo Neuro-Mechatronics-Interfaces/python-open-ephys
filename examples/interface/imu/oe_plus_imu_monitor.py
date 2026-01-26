@@ -8,7 +8,9 @@ import time
 from typing import Dict
 
 # Expect zmq_client.py (the class we built) and sleeveimu.py (your IMU client) on PYTHONPATH
-from zmq_client import ZMQClient
+# Package imports
+from pyoephys.interface import ZMQClient
+import sleeveimu as imu
 from sleeveimu import SleeveIMUClient
 
 
