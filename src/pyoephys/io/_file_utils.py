@@ -82,8 +82,8 @@ def load_oebin_file(path: str | None = None, verbose: bool = False) -> dict:
 
     # Load OEBIN file
     if os.path.isdir(path):
-        if verbose:
-            print(f"Searching for OEBIN files in directory: {path}")
+        # if verbose:
+        #    print(f"Searching for OEBIN files in directory: {path}")
         oebin_files = find_oebin_files(path)
         if not oebin_files:
             print("No OEBIN files found in the specified directory.")
@@ -91,11 +91,12 @@ def load_oebin_file(path: str | None = None, verbose: bool = False) -> dict:
         path = oebin_files[0]
 
     if os.path.isfile(path):
-        print(f"|  Loading OEBIN file from: {path}")
+        # print(f"|  Loading OEBIN file from: {path}")
         result = load_open_ephys_session(os.path.dirname(path), verbose=verbose)
         if verbose:
-            print(f"|  Data shape: {result['amplifier_data'].shape}")
-            print(f"|  Sample rate: {result['sample_rate']} Hz")
+            pass
+            # print(f"|  Data shape: {result['amplifier_data'].shape}")
+            # print(f"|  Sample rate: {result['sample_rate']} Hz")
         return result
     else:
         print(f"File not found: {path}")

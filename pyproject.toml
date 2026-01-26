@@ -12,10 +12,10 @@ keywords = ["open-ephys", "emg", "neurotech", "signal processing", "biomedical"]
 dependencies = [
     "numpy>=1.26.0",
     "scipy==1.14.1",
-    #"matplotlib",
+    "matplotlib",
     "tqdm",
     "torch",
-    #"pandas",
+    "pandas",
     #"PySerial",
     "scikit-learn",
     # "nvidia-cuda-toolkit", # This is not a Python package, but a system package
@@ -27,6 +27,7 @@ dependencies = [
     "pyzmq",
     "pyserial",
     "open-ephys-python-tools",
+    "pylsl",
 ]
 #dynamic = ["version"]
 

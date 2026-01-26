@@ -1,6 +1,7 @@
 from ._models import (
     EMGRegressor,
     EMGClassifier,
+    EMGClassifierCNNLSTM,
 )
 from ._model_manager import (
     ModelManager,
