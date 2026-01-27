@@ -20,8 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build Paper
-        uses: openjournals/paper-action@master
+        uses: openjournals/openjournals-draft-action@master
         with:
+          journal: joss
           paper_path: paper.md
       - name: Upload PDF
         uses: actions/upload-artifact@v4
