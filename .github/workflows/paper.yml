@@ -1,0 +1,30 @@
+name: JOSS Paper Preview
+on:
+  push:
+    paths:
+      - 'paper.md'
+      - 'paper.bib'
+      - 'docs/figs/**'
+  pull_request:
+    paths:
+      - 'paper.md'
+      - 'paper.bib'
+      - 'docs/figs/**'
+  workflow_dispatch:
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    name: Paper Draft
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Paper
+        uses: openjournals/paper-action@master
+        with:
+          paper_path: paper.md
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: paper.pdf
