@@ -25,9 +25,11 @@ jobs:
           journal: joss
           paper-path: paper.md
       - name: List files (Debug)
-        run: ls -R
+        run: |
+          ls -R
+          find . -name "*.pdf"
       - name: Upload PDF
         uses: actions/upload-artifact@v4
         with:
           name: paper
-          path: paper.pdf
+          path: "**/*.pdf"
