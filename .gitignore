@@ -19,7 +19,6 @@ __pycache__/
 
 # Images
 gesture_classifier/*.png
-*.png
 
 # PyTorch models
 gesture_classifier/*.pth
@@ -97,3 +96,4 @@ python_open_ephys-*
 *.npz
 *.npy
 *.log
+/scripts/

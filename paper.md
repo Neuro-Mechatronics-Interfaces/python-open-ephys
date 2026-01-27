@@ -41,7 +41,7 @@ The field of neural data analysis is supported by several specialized tools. The
 
 `python-oephys` is designed with a modular architecture that separates data acquisition, processing, and visualization (see Figure 1).
 
-![EMG Processing Pipeline. A) Raw signals from five representative channels (10–20s). B) Signals after CAR, bandpass (20-500Hz), and 60Hz notch filtering. C) Automated channel quality indicators evaluated on the first 5s of data. D) Mean RMS features extracted from the processed segment.](docs/figs/pipeline.png)
+![EMG Processing Pipeline. A) Raw signals from five representative channels (20–30s). B) Signals after CAR, bandpass (20-500Hz), and 60Hz notch filtering. C) Automated channel quality indicators evaluated on the first 5s of data. D) Mean RMS features extracted from the processed segment.](docs/figs/pipeline.png)
 
 - **Interface Layer**: Implements ZMQ and LSL clients for low-latency data streaming. The `ZMQClient` is designed to run asynchronously, ensuring that data acquisition does not block processing or UI updates.
 - **Processing Layer**: Provides a suite of filters and feature extraction tools. This includes the `EMGPreprocessor` for standardized filtering and `ChannelQC` for real-time signal quality monitoring.
