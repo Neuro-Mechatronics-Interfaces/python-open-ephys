@@ -24,7 +24,7 @@ jobs:
         with:
           journal: joss
           paper-path: paper.md
-      - name: List files (Debug)
+      - name: Check for PDF (Debug)
         run: |
           ls -R
           find . -name "*.pdf"
@@ -32,4 +32,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: paper
-          path: "**/*.pdf"
+          path: "*.pdf"
