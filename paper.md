@@ -50,7 +50,12 @@ The field of neural data analysis is supported by several specialized tools. The
 
 # Research Impact
 
-`python-oephys` has been deployed in the Neuromechatronics Lab at Carnegie Mellon University to support research in high-density EMG-based human-computer interaction and robotic control. Its ability to provide sub-millisecond latency for feature extraction has enabled more responsive myoelectric interfaces compared to previous custom implementations.
+`python-oephys` is a foundational component of the research infrastructure at the Neuromechatronics Lab at Carnegie Mellon University. Its deployment has significantly advanced several core research thrusts:
+
+1. **High-Density Myoelectric Control**: By providing a high-performance pipeline capable of processing 64+ channels of HD-EMG data in real-time, the toolkit enables the development of sophisticated human-machine interfaces. It supports the transition from laboratory-based offline analysis to live, closed-loop control of robotic prostheses and assistive devices.
+2. **Standardization and Reproducibility**: The modular design of `pyoephys` ensures that signal processing standards (e.g., CAR, specific filtering bands, and QC metrics) are consistent across various research projects. This reduces "re-invention" time and lowers the barrier for new researchers entering the field of neuro-engineering.
+3. **Low-Latency Inference**: The tight integration of PyTorch and ZeroMQ allows for sub-10ms feature extraction and classification latencies. This responsiveness is critical for minimizing the user-perceived delay in myoelectric control, which is a primary determinant of user acceptance and system efficacy.
+4. **Hardware Agnostic Processing**: While specialized for the Open Ephys ecosystem, the internal data structures and processing pipelines are extensible to other electrophysiology systems, providing a bridge between disparate hardware platforms and common machine learning frameworks.
 
 # Acknowledgements
 
