@@ -91,6 +91,7 @@ examples/
 │   ├── imu/          # Sleeve IMU client & monitor
 │   ├── lsl/          # LSL streaming & capture
 │   └── zmq/          # ZMQ clients & plotters
+├── applications/     # Standalone GUIs (EMG viewer, joint-angle regression)
 └── machine_learning/ # Model training and evaluation
 ```
 
