@@ -161,6 +161,22 @@ def stem_without_timestamp(path):
     return stem
 
 def find_event_for_file(events_dir, data_file_path):
+    """
+    Locate a label / events file for *data_file_path* by searching *events_dir*
+    and the parent directory of the data file.
+
+    Search order (first match wins):
+      1. ``{stem}_emg.event`` / ``{stem}.event``  (Open Ephys .event format)
+      2. ``{stem}_emg.txt``   / ``{stem}.txt``    (named after the recording)
+      3. ``labels.csv``  →  ``events.csv``  →  ``emg.txt``  →  ``labels.txt``
+         (generic names, checked in *events_dir* then the data parent folder)
+      4. Any ``{stem}*.event`` or ``{stem}*.txt`` glob match in the parent folder.
+
+    Both filenames containing ``emg`` (e.g. ``emg.txt``, ``session_emg.txt``)
+    and filenames containing ``labels`` (e.g. ``labels.csv``) are accepted.
+
+    Returns the first matching path, or ``None`` if nothing is found.
+    """
     stem = stem_without_timestamp(data_file_path)
     base_name = os.path.splitext(os.path.basename(data_file_path))[0]
     candidates = [
@@ -170,11 +186,20 @@ def find_event_for_file(events_dir, data_file_path):
         os.path.join(events_dir, f"{stem}.event"),
         os.path.join(events_dir, f"{base_name}_emg.txt"),
         os.path.join(events_dir, f"{base_name}.txt"),
+        # CSV / TXT transition-style label files
+        os.path.join(events_dir, "labels.csv"),
+        os.path.join(events_dir, "events.csv"),
+        os.path.join(events_dir, "emg.txt"),
+        os.path.join(events_dir, "labels.txt"),
     ]
     for c in candidates:
         if os.path.isfile(c): return c
     parent = os.path.dirname(data_file_path)
     if os.path.isdir(parent):
+        for name in ("labels.csv", "events.csv", "emg.txt", "labels.txt"):
+            sibling = os.path.join(parent, name)
+            if os.path.isfile(sibling):
+                return sibling
         siblings = glob.glob(os.path.join(parent, f"{stem}*.event")) + glob.glob(os.path.join(parent, f"{stem}*.txt"))
         if siblings: return siblings[0]
     return None

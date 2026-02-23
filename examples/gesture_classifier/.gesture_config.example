@@ -1,50 +1,48 @@
 # EMG Gesture Classifier Configuration (Open Ephys)
 # =================================================
+# Copy this file to .gesture_config and edit as needed.
+# All three pipeline scripts read settings from .gesture_config
+# (CLI arguments override these values).
 
-# Root directory containing Open Ephys recordings (parent of data subfolders)
-root_dir=./data
+# ── Shared ───────────────────────────────────────────────────────────────────
 
-# Model label (used for naming output files, e.g., 'model/128ch_model.pkl')
-label=demo_model
+# Path to the EMG recording (CSV, .npz, or Open Ephys folder / .oebin).
+# Defaults to the included example data when not set.
+data_path=./data/gestures
 
-# Enable verbose logging
-verbose=true
+# Path to the labels/events file (CSV with Sample Index,Label columns).
+# Auto-discovered alongside data_path when not set.
+labels_path=./data/labels.csv
 
-# ============================================================================
-# Dataset Building (1_build_dataset.py)
-# ============================================================================
+# Directory where the trained model will be saved and loaded from.
+# This is the *root* data directory — model files go in a model/ sub-folder.
+root_dir=./data/gesture_model
 
-# Output path for the training dataset (.npz)
-# If not specified, defaults to {root_dir}/training_dataset.npz
-save_path=./data/training_dataset.npz
+# Model label / name tag (used for output file naming).
+label=gesture_model
 
-# Feature extraction settings
+# Enable verbose logging.
+verbose=false
+
+# ── Dataset Building (1_build_dataset.py) ────────────────────────────────────
+
+# Output path for the windowed feature dataset (.npz).
+dataset_path=./data/training_dataset.npz
+
+# Window and step lengths in milliseconds.
 window_ms=200
 step_ms=50
 
-# ============================================================================
-# Training (2_train_model.py)
-# ============================================================================
+# ── Training (2_train_model.py) ──────────────────────────────────────────────
 
-# Number of training epochs
-epochs=100
-
-# Batch size
-batch_size=32
-
-# Learning rate
-learning_rate=0.001
-
-# Use K-Fold Cross Validation? (true/false)
+# Use K-Fold Cross Validation (true/false).
 kfold=true
 
-# ============================================================================
-# Prediction (3_predict_realtime.py)
-# ============================================================================
+# ── Real-Time Prediction (3_predict_realtime.py) ─────────────────────────────
 
-# ZMQ connection
-zmq_ip=tcp://127.0.0.1
-zmq_port=5556
+# Open Ephys machine IP and ZMQ data port.
+host=127.0.0.1
+port=5556
 
-# Inference Smoothing
+# Majority-vote smoothing window (number of consecutive predictions).
 smooth_k=5

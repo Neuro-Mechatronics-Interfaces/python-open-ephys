@@ -26,6 +26,9 @@ from sklearn.metrics import (
 )
 
 
+log = logging.getLogger(__name__)
+
+
 def setup_logger():
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
@@ -50,12 +53,20 @@ def _is_classification(y):
 
 
 def load_training_metadata(file_path: str) -> Dict:
-    """Load model metadata saved at training time."""
-    if file_path.endswith(".json"):
-        root_dir = os.path.dirname(file_path)
+    """Load model metadata saved at training time.
+
+    Accepts either:
+    - a directory path (``root_dir``) — looks for ``root_dir/model/metadata.json``
+    - a direct path to a ``metadata.json`` file
+    """
+    if file_path.endswith(".json") and os.path.isfile(file_path):
+        # Caller already gave us the exact file.
+        meta_path = file_path
+    elif file_path.endswith(".json"):
+        # Treat the directory that would contain this json as root_dir.
+        meta_path = os.path.join(os.path.dirname(file_path), "model", "metadata.json")
     else:
-        root_dir = file_path
-    meta_path = os.path.join(root_dir, "model", "metadata.json")
+        meta_path = os.path.join(file_path, "model", "metadata.json")
     if not os.path.isfile(meta_path):
         raise FileNotFoundError(f"Missing metadata.json at {meta_path}")
     with open(meta_path, "r") as f:
@@ -65,6 +76,7 @@ def load_training_metadata(file_path: str) -> Dict:
 def write_training_metadata(root_dir: str, *, window_ms: int, step_ms: int, envelope_cutoff_hz: float,
     channel_names: Optional[Iterable[str]] = None, selected_channels: Optional[Iterable[int]] = None,
     sample_rate_hz: Optional[float] = None, n_features: Optional[int] = None, feature_set: Optional[Iterable[str]] = None,
+    ignore_labels: Optional[Iterable[str]] = None,
     require_complete: bool = True, required_fraction: float = 1.0, channel_wait_timeout_sec: float = 15.0) -> None:
     """
     Merge/update fields in model/metadata.json so real-time ZMQ prediction has a single source of truth.
@@ -74,8 +86,12 @@ def write_training_metadata(root_dir: str, *, window_ms: int, step_ms: int, enve
     os.makedirs(meta_dir, exist_ok=True)
     meta_path = os.path.join(meta_dir, "metadata.json")
 
-    # Load existing metadata if present
-    meta = load_training_metadata(meta_path) if os.path.isfile(meta_path) else {}
+    # Load existing metadata if present (read directly — path already resolved)
+    if os.path.isfile(meta_path):
+        with open(meta_path, "r") as _f:
+            meta = json.load(_f)
+    else:
+        meta = {}
 
     # Core pipeline params (training-time truth)
     meta.update({
@@ -97,6 +113,8 @@ def write_training_metadata(root_dir: str, *, window_ms: int, step_ms: int, enve
         meta["n_features"] = int(n_features)
     if feature_set is not None:
         meta["feature_set"] = list(feature_set)
+    if ignore_labels is not None:
+        meta["ignore_labels"] = [str(l) for l in ignore_labels]
 
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
@@ -274,24 +292,18 @@ class ModelManager:
         torch.save(self.model.state_dict(), self.model_path)
         print("Model saved")
 
-        # Save metadata
-        # metadata = {
-        #     "input_dim": self.model.input_dim,
-        #     "output_dim": self.model.output_dim,
-        #     "model_type": self.model.__class__.__name__,
-        #     "model_path": self.model_path,
-        #     "scaler_path": self.scaler_path,
-        #     "metrics_path": self.metrics_path,
-        #     "training_config": {
-        #         "num_epochs": num_epochs,
-        #         "stop_patience": stop_patience,
-        #         "learning_rate": learning_rate,
-        #         "val_interval": val_interval
-        #     }
-        # }
-        # with open(self.metadata_path, 'w') as f:
-        #      json.dump(metadata, f, indent=2)
-        # self.logger.info(f"Metadata saved to {self.metadata_path}")
+        # Save minimal metadata so load_model() can reconstruct the architecture
+        _min_meta = {
+            "schema_version": "1.1.0",
+            "created_by": "pyoephys.ml.ModelManager",
+            "model": {"class": type(self.model).__name__},
+            "input_dim": int(self.model.input_dim),
+            "output_dim": int(self.model.output_dim),
+        }
+        os.makedirs(self.model_dir, exist_ok=True)
+        with open(self.metadata_path, "w", encoding="utf-8") as _f:
+            json.dump(_min_meta, _f, indent=2)
+        self.logger.info(f"Minimal metadata saved to {self.metadata_path}")
 
         # Evaluate on validation dataset
         self.model.eval()
@@ -317,6 +329,197 @@ class ModelManager:
         with open(self.metrics_path, 'w') as f:
             json.dump(self.eval_metrics, f, indent=2)
         self.logger.info(f"Evaluation metrics saved to {self.metrics_path}")
+
+    def fine_tune(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        freeze_body: bool = True,
+        num_epochs: int = 500,
+        learning_rate: float = 5e-4,
+        stop_patience: int = 10,
+        val_interval: int = 10,
+        validation_data=None,
+        save_metrics: bool = True,
+    ) -> None:
+        """Retrain using a pre-loaded model as warm-start, adapting to new user data.
+
+        This implements the "frozen-body / retrained-head" paradigm from
+        MindRove-EMG's ``fine_tune_model``: the existing weights are used as
+        strong initialisation so only a small amount of new data is needed.
+
+        When *freeze_body* is ``True`` only the last linear layer's parameters
+        receive gradients; all earlier layers are frozen.  This is appropriate
+        when *X* is small (< a few hundred windows).  Set to ``False`` to
+        fine-tune the whole network (requires more data but allows full
+        adaptation).
+
+        The model must be loaded before calling this method — either because
+        :meth:`train` was called earlier in the same session, or because
+        :meth:`load_model` was called explicitly.
+
+        Parameters
+        ----------
+        X : ndarray, shape (N, n_features)
+        y : array-like of labels
+        freeze_body : bool
+            When True, freeze all layers except the final linear layer.
+        num_epochs : int
+            Maximum training epochs for the fine-tuning pass.
+        learning_rate : float
+            Learning rate for Adam during fine-tuning.
+        stop_patience : int
+            Early-stopping patience (epochs without val improvement).
+        val_interval : int
+            Evaluate on validation set every *val_interval* epochs.
+        validation_data : tuple (X_val, y_val) or None
+            Held-out set.  When None, 20 % of *X* is held out automatically.
+        save_metrics : bool
+            Overwrite the ``metrics.json`` file after fine-tuning.
+
+        Examples
+        --------
+        >>> manager = ModelManager(root_dir="data", model_cls=EMGClassifier)
+        >>> manager.load_model()
+        >>> manager.fine_tune(X_new_user, y_new_user, freeze_body=True)
+        >>> manager.save_metadata(manager.build_metadata(...))
+        """
+        if self.model is None:
+            raise RuntimeError(
+                "Model is not loaded.  Call load_model() or train() first, "
+                "then call fine_tune() to adapt to new data."
+            )
+
+        if y.ndim == 2 and y.shape[1] == 1:
+            y = y.ravel()
+        y = np.asarray(y)
+
+        # Split manually — deliberately bypass _build_dataset() so it does NOT
+        # re-fit and overwrite self.scaler / self.encoder from the new user data.
+        if validation_data is not None:
+            X_train, y_train = X, y
+            X_val, y_val = np.asarray(validation_data[0]), np.asarray(validation_data[1])
+        else:
+            test_size = self.config.get("test_size", 0.2)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=test_size,
+                stratify=y,
+                random_state=self.config.get("seed", 42),
+            )
+
+        # ------------------------------------------------------------------
+        # Optionally freeze all layers except the last linear layer
+        # ------------------------------------------------------------------
+        if freeze_body:
+            # Freeze all parameters first, then unfreeze the last Linear layer
+            for param in self.model.parameters():
+                param.requires_grad = False
+
+            # Find the last nn.Linear and unfreeze it
+            last_linear = None
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Linear):
+                    last_linear = module
+            if last_linear is not None:
+                for param in last_linear.parameters():
+                    param.requires_grad = True
+                log.info("[fine_tune] Frozen body — adapting only last Linear layer.")
+            else:
+                log.warning(
+                    "[fine_tune] No nn.Linear found; fine-tuning all parameters."
+                )
+                for param in self.model.parameters():
+                    param.requires_grad = True
+
+        # ------------------------------------------------------------------
+        # Scaler: fit on new data if not yet fitted, else transform only
+        # ------------------------------------------------------------------
+        if self.scaler is None:
+            self.scaler = StandardScaler()
+            X_train = self.scaler.fit_transform(X_train)
+            X_val = self.scaler.transform(X_val)
+        else:
+            X_train = self.scaler.transform(X_train)
+            X_val = self.scaler.transform(X_val)
+
+        # Encoder: fit on new labels while inheriting class ordering if possible
+        if self.encoder is None:
+            self.encoder = LabelEncoder()
+            self.encoder.fit(y_train)
+        else:
+            # Merge existing classes and new ones (preserves old label indices)
+            new_classes = np.union1d(self.encoder.classes_, np.unique(y_train))
+            self.encoder.classes_ = new_classes
+
+        y_train_enc = self.encoder.transform(y_train)
+        y_val_enc = self.encoder.transform(y_val)
+
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.model.parameters()),
+            lr=learning_rate,
+        )
+        criterion = torch.nn.CrossEntropyLoss()
+
+        X_tr_t = torch.tensor(X_train, dtype=torch.float32)
+        y_tr_t = torch.tensor(y_train_enc, dtype=torch.long)
+        X_va_t = torch.tensor(X_val, dtype=torch.float32)
+        y_va_t = torch.tensor(y_val_enc, dtype=torch.long)
+
+        best_val_loss = np.inf
+        epochs_no_improve = 0
+
+        for epoch in range(num_epochs):
+            self.model.train()
+            optimizer.zero_grad()
+            out = self.model(X_tr_t)
+            loss = criterion(out, y_tr_t)
+            loss.backward()
+            optimizer.step()
+
+            if (epoch + 1) % val_interval == 0:
+                self.model.eval()
+                with torch.no_grad():
+                    val_loss = criterion(self.model(X_va_t), y_va_t).item()
+                logging.info(
+                    f"[fine_tune] Epoch {epoch+1}/{num_epochs} | "
+                    f"train={loss.item():.6f} | val={val_loss:.6f}"
+                )
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    epochs_no_improve = 0
+                else:
+                    epochs_no_improve += 1
+                    if epochs_no_improve >= stop_patience:
+                        logging.info("[fine_tune] Early stopping triggered.")
+                        break
+
+        # Re-unfreeze all parameters so subsequent calls work as expected
+        for param in self.model.parameters():
+            param.requires_grad = True
+
+        # Persist adapted weights over the existing model file
+        torch.save(self.model.state_dict(), self.model_path)
+        joblib.dump(self.scaler, self.scaler_path)
+        joblib.dump(self.encoder, self.encoder_path)
+
+        # Evaluate
+        self.model.eval()
+        with torch.no_grad():
+            pred_idx = torch.argmax(self.model(X_va_t), dim=1).numpy()
+            pred_labels = self.encoder.inverse_transform(pred_idx)
+            self.eval_metrics = {
+                "classification_report": classification_report(
+                    y_val, pred_labels, output_dict=True
+                )
+            }
+
+        print(f"[fine_tune] Complete. Val metrics: {self.eval_metrics}")
+
+        if save_metrics:
+            os.makedirs(self.model_dir, exist_ok=True)
+            with open(self.metrics_path, "w") as _f:
+                json.dump(self.eval_metrics, _f, indent=2)
 
     def load_model(self):
         # Load metadata
@@ -379,6 +582,50 @@ class ModelManager:
                 return self.encoder.inverse_transform(idx)
             else:
                 return out.numpy().ravel()
+
+    def predict_proba(self, X) -> np.ndarray:
+        """Return softmax class probabilities for each sample.
+
+        Only valid for classifiers (encoder must be set).
+
+        Parameters
+        ----------
+        X : np.ndarray, shape (N, n_features)
+
+        Returns
+        -------
+        np.ndarray, shape (N, n_classes)
+            Row-normalised softmax probabilities in class order matching
+            ``self.encoder.classes_``.
+        """
+        if not self.encoder:
+            raise RuntimeError(
+                "predict_proba is only available for classifiers. "
+                "This ModelManager was initialised without a label encoder."
+            )
+
+        if self.model is None:
+            self.load_model()
+
+        if self.scaler is None:
+            self.scaler = joblib.load(self.scaler_path)
+
+        X_scaled = self.scaler.transform(X)
+        if self.pca:
+            X_scaled = self.pca.transform(X_scaled)
+
+        if X_scaled.shape[1] != self.model.input_dim:
+            raise ValueError(
+                f"Feature dim {X_scaled.shape[1]} != model.input_dim {self.model.input_dim}"
+            )
+
+        import torch.nn.functional as F  # local import to keep top-level clean
+
+        self.model.eval()
+        with torch.no_grad():
+            logits = self.model(torch.tensor(X_scaled, dtype=torch.float32))
+            probs = F.softmax(logits, dim=1).numpy()
+        return probs
             #    predictions = out.numpy()
             #if self.label_encoder is not None:
             #    # Classification, return string
@@ -407,13 +654,36 @@ class ModelManager:
         return gs.best_estimator_, gs.best_params_
 
     def cross_validate(self, X, y, k=5):
-        is_class = self.config.get('task', 'classification') == 'classification'
+        """Run k-fold cross-validation and return per-fold metrics plus an aggregated summary.
+
+        Returns
+        -------
+        dict with keys:
+            ``folds``   – list of per-fold eval_metrics dicts
+            ``summary`` – dict of metric_name → {mean, std} over all folds (scalar metrics only)
+        """
         kf = KFold(n_splits=k, shuffle=True, random_state=self.config.get('seed', 42))
-        metrics = []
+        fold_metrics = []
         for train_idx, val_idx in kf.split(X):
             self.train(X[train_idx], y[train_idx], validation_data=(X[val_idx], y[val_idx]))
-            metrics.append(self.eval_metrics)
-        return metrics
+            fold_metrics.append(self.eval_metrics)
+
+        # For classifiers, promote accuracy out of the nested classification_report dict
+        # so the summary aggregation can find it as a scalar.
+        for fold in fold_metrics:
+            cr = fold.get("classification_report")
+            if isinstance(cr, dict) and "accuracy" in cr and "accuracy" not in fold:
+                fold["accuracy"] = float(cr["accuracy"])
+
+        # Aggregate scalar metrics (skip nested dicts like classification_report)
+        summary: dict = {}
+        scalar_keys = [key for key, v in fold_metrics[0].items() if isinstance(v, (int, float))]
+        for key in scalar_keys:
+            vals = [m[key] for m in fold_metrics if key in m]
+            summary[key] = {"mean": float(np.mean(vals)), "std": float(np.std(vals))}
+        if self.verbose:
+            print(f"[cross_validate] {k}-fold summary: {summary}")
+        return {"folds": fold_metrics, "summary": summary}
 
     def build_metadata(self, *, sample_rate_hz: float, window_ms: int, step_ms: int, envelope_cutoff_hz: float,
             selected_channels: Optional[List[int]], channel_names: Optional[List[str]], feature_spec: Dict[str, Any],

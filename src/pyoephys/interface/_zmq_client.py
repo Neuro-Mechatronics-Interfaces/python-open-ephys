@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import json
 import uuid
+import warnings
 import numpy as np
 import zmq
 from typing import Iterable, Optional, List, Tuple
@@ -377,7 +378,7 @@ class ZMQClient:
 
                 # periodic global index logger
                 now = time.time()
-                if (now - self._last_index_log) >= self.index_log_interval_s and self.ready_event.is_set():
+                if self.verbose and (now - self._last_index_log) >= self.index_log_interval_s and self.ready_event.is_set():
                     with self._lock:
                         gidx = int(self.global_sample_index)
                         lidx = int(self.loop_sample_index)
@@ -468,7 +469,7 @@ class ZMQClient:
         if not self.ready_event.is_set():
             raise NotReadyError("NewZMQClient not ready; no data received yet.")
 
-        return self.get_latest(nsamples)[1]
+        return self.get_latest(nsamples)[0]
 
     def get_latest(self, n: int) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -640,6 +641,12 @@ class WorkingZMQClient:
             max_channels: int = 256,
     ):
         # --- config / state
+        warnings.warn(
+            "WorkingZMQClient is deprecated and will be removed in a future version. "
+            "Use ZMQClient instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.ip = zqm_ip
         self.data_port = int(data_port)
         if heartbeat_port is None:

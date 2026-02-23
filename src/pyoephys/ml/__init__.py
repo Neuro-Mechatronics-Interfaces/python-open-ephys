@@ -12,3 +12,4 @@ from ._model_manager import (
     load_training_metadata,
 )
 from ._evaluation import evaluate_against_events
+from ._model_router import ModelRouter, ModelRouterConfig

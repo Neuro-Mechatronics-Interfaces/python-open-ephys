@@ -64,3 +64,5 @@ from ._temporal_filters import (
 )
 from ._imu_features import aggregate_imu_features, append_imu_features
 from ._data_processing import print_progress
+from ._spatial import MontageMode, SpatialReference
+from ._zca import ZcaParams, ZcaHandler

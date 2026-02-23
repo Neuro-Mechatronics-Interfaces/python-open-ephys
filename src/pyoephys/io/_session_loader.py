@@ -25,6 +25,8 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
 
     Supported inputs:
       - .npz with keys {emg, timestamps, fs_hz} (preferred quick path)
+      - CSV with a ``timestamp`` column and one column per channel
+      - .npz with keys {emg, timestamps, fs_hz} (preferred quick path)
       - folder/file with .oebin (+ binary 'continuous.dat' and 'timestamps.npy')
       - folder containing 'amplifier_data.npy' and 'timestamps.npy' and 'sample_rate.txt'
 
@@ -38,6 +40,24 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     - If per-sample timestamps aren't available, we synthesize a strictly monotonic vector.
     """
     p = Path(path)
+
+    # Case 0: CSV with a timestamp column
+    if p.is_file() and p.suffix.lower() == ".csv":
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas is required to load CSV files: pip install pandas")
+        df = pd.read_csv(p)
+        if "timestamp" in df.columns:
+            t = df["timestamp"].to_numpy(dtype=np.float64)
+            ch_cols = [c for c in df.columns if c != "timestamp"]
+        else:
+            t = df.iloc[:, 0].to_numpy(dtype=np.float64)
+            ch_cols = list(df.columns[1:])
+        y = df[ch_cols].to_numpy(dtype=np.float32).T  # (C, S)
+        dt = float(np.median(np.diff(t))) if len(t) > 1 else 1.0 / 200.0
+        fs = round(1.0 / dt) if dt > 0 else 200.0
+        return SessionData(y, t, fs, ch_cols).__dict__
 
     # Case 1: NPZ convenience (emg/timestamps/fs_hz)
     if p.is_file() and p.suffix.lower() == ".npz":
@@ -128,18 +148,25 @@ def _load_oebin_meta(oebin_path: Path) -> dict:
 def _pick_continuous_stream(meta: dict) -> Optional[dict]:
     """
     Traverse common .oebin shapes and return the first 'continuous' stream dict.
+
+    Handles all known Open Ephys GUI v0.5/v0.6/v1.x layout variants:
+      - meta["continuous"][0]                           (GUI ≥ 1.0, top-level)
+      - meta["recordings"][0]["continuous"][0]
+      - meta["recordings"][0]["streams"]["continuous"][0]
+      - meta["streams"]["continuous"][0]
     """
-    # Typical shapes:
-    # meta["recordings"][0]["streams"]["continuous"][0]
-    # meta["streams"]["continuous"][0]
-    # meta["recordings"][0]["continuous"][0]
-    # Generalized traversal:
     def _listify(x):
         if isinstance(x, list):
             return x
         if isinstance(x, dict):
             return list(x.values())
         return []
+
+    # Top-level "continuous" (GUI >= 1.0 .oebin format)
+    if "continuous" in meta:
+        items = _listify(meta["continuous"])
+        if items:
+            return items[0]
 
     candidates: list[dict] = []
     if "recordings" in meta:
@@ -166,7 +193,12 @@ def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0
         if bv is None:
             uv.append(default_uv_per_count)
         else:
-            uv.append(float(bv) * 1e6)  # convert V to µV
+            # bit_volts is in µV/count when units=="uV", otherwise assume V/count
+            units = (ch.get("units") or "").strip().lower()
+            if units in ("uv", "µv", "microvolts"):
+                uv.append(float(bv))          # already µV/count
+            else:
+                uv.append(float(bv) * 1e6)   # convert V/count → µV/count
     if not uv:
         return np.full((1,), default_uv_per_count, dtype=np.float32)
     return np.asarray(uv, dtype=np.float32)

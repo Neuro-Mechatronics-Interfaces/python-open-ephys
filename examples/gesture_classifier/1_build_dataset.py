@@ -1,220 +1,383 @@
 #!/usr/bin/env python3
 """
-Unified Dataset Builder for EMG Gesture Classification (Open Ephys Version)
+1_build_dataset.py — EMG Gesture Dataset Builder
+=================================================
+Reads raw EMG data, extracts windowed features, and saves a labelled
+training dataset as a .npz file ready for 2_train_model.py.
 
-Optimized script leveraging pyoephys package utilities.
-Supports Open Ephys (.oebin) and NPZ formats.
+Supported input formats
+-----------------------
+  CSV   — timestamp + channel columns (+ companion labels.csv)
+  .npz  — keys: emg (C×S float32), timestamps, fs_hz
+  .oebin — Open Ephys binary recording
 
-Examples:
-    # Single session
-    python 1_build_dataset.py --root_dir ./data --file_path ./data/session_1/structure.oebin --overwrite
-    
-    # Multi-session auto-discovery
-    python 1_build_dataset.py --root_dir ./data --multi_file --overwrite
-    
-    # Paper-style preprocessing (120Hz highpass, RMS)
-    python 1_build_dataset.py --root_dir ./data --multi_file --paper_style --overwrite
-    
-    # From config file
-    python 1_build_dataset.py --config_file .gesture_config --overwrite
+Default behaviour (zero arguments)
+-----------------------------------
+  Loads  ./data/gestures/   (Open Ephys recording folder)
+  Auto-discovers a label file within it (see below)
+  Saves  ./data/gestures/training_dataset.npz
+
+Usage
+-----
+  # Point at your Open Ephys recording:
+  python 1_build_dataset.py --data_path data/gestures
+
+  # Custom CSV + labels:
+  python 1_build_dataset.py \\
+      --data_path  data/my_emg.csv \\
+      --labels_path data/my_labels.csv
+
+  # Open Ephys recording:
+  python 1_build_dataset.py \\
+      --data_path  data/session_1/structure.oebin \\
+      --labels_path data/session_1/labels.csv
+
+  # Override window/step:
+  python 1_build_dataset.py --window_ms 200 --step_ms 50
+
+  # Ignore rest segments:
+  python 1_build_dataset.py --ignore_labels rest
+
+  # Auto-drop bad channels (quiet-segment QC):
+  python 1_build_dataset.py --auto_select_channels
+
+  # Explicit quiet/rest window for QC (first 10 s):
+  python 1_build_dataset.py --auto_select_channels --qc_quiet_sec 0 10
+
+  # Tune the noise threshold (µV RMS during rest):
+  python 1_build_dataset.py --auto_select_channels --noise_threshold 20
+
+  # Auto-select channels, overwrite any existing dataset, and ignore start labels:
+  python 1_build_dataset.py --auto_select_channels --overwrite --ignore_labels Start
+
+Labels file format (CSV / TXT)
+------------------------------
+  Two columns: "Sample Index" and "Label".
+  Each row marks the start of a new epoch (transition format).
+
+  Sample Index,Label
+  0,rest
+  400,fist
+  800,rest
+  ...
+
+Label file auto-discovery
+-------------------------
+  If --labels_path is not provided the script searches for a label file
+  next to (or inside) the data folder in this priority order:
+
+    {recording_name}_emg.txt   {recording_name}.txt
+    {recording_name}_emg.event {recording_name}.event
+    labels.csv                 events.csv
+    emg.txt                    labels.txt
+
+  Both "labels" and "emg" variants are accepted so that files named
+  ``emg.txt``, ``labels.csv``, ``session1_emg.txt`` etc. are all found
+  without any extra flags.
+  (Implemented in pyoephys.io.find_event_for_file)
 """
 
-import os
-import sys
 import argparse
 import logging
-from time import time
-import numpy as np
+import os
 from pathlib import Path
 
-from pyoephys.io._config_utils import (
+import numpy as np
+from scipy.signal import iirnotch, butter, sosfiltfilt, tf2sos
+
+from pyoephys.io import (
     load_simple_config,
-    save_simple_config,
-    prompt_directory,
-    prompt_file,
-    get_or_prompt_value,
-    prompt_yes_no,
-    prompt_text
-)
-from pyoephys.io._file_utils import (
-    discover_and_group_files
-)
-from pyoephys.io._dataset_utils import (
+    load_open_ephys_session,
     process_recording,
     save_dataset,
-    select_channels,
-    load_open_ephys_data
 )
-from pyoephys.io._grid_utils import (
-    infer_grid_dimensions,
-    apply_grid_permutation,
-    parse_orientation_from_filename
-)
+
+# ---------------------------------------------------------------------------
+# Build function
+# ---------------------------------------------------------------------------
 
 def build_dataset(
-    root_dir: str, 
-    file_type: str = "oebin", 
-    file_path: str = None,
-    file_names: list = None, 
-    multi_file: bool = False,
-    events_file: str = None, 
-    label: str = "", 
-    save_path: str = None,
-    window_ms: int = 200, 
-    step_ms: int = 50, 
-    paper_style: bool = False,
-    channels: list = None, 
-    channel_map: str = None,
-    channel_map_file: str = "custom_channel_mappings.json",
-    mapping_non_strict: bool = False, 
-    orientation: str = "auto",
-    orientation_remap: str = "none", 
-    ignore_labels: list = None, 
-    ignore_case: bool = False,
-    keep_trial_label: bool = False, 
+    data_path: str,
+    labels_path: str | None = None,
+    save_path: str | None = None,
+    window_ms: int = 200,
+    step_ms: int = 50,
+    channels: list | None = None,
+    ignore_labels: list | None = None,
+    auto_select_channels: bool = False,
+    noise_threshold_uv: float = 30.0,
+    qc_quiet_sec: tuple[float, float] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
-):
-    start_time = time()
-    lvl = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(format="[%(levelname)s] %(message)s", level=lvl, force=True)
-    
-    if not os.path.exists(root_dir):
-        raise ValueError(f"Root dir does not exist: {root_dir}")
-        
-    save_path = save_path or os.path.join(
-        root_dir, f"{label}_training_dataset.npz" if label else "training_dataset.npz"
+) -> None:
+    """
+    Full dataset-build pipeline.
+
+    Parameters
+    ----------
+    data_path            : Path to EMG data (.csv, .npz, or .oebin).
+    labels_path          : Path to a labels/events file (CSV or TXT, transition
+                           format).  Auto-detected if None — the script searches
+                           for labels.csv, events.csv, emg.txt, labels.txt, or
+                           {recording}_emg.txt next to the data folder.
+    save_path            : Output .npz path (auto-derived if None).
+    window_ms            : Feature window length in milliseconds.
+    step_ms              : Window step size in milliseconds.
+    channels             : List of channel indices to keep (None = all).
+    ignore_labels        : Label names to exclude (e.g. ['rest']).
+    auto_select_channels : If True, automatically drop channels flagged bad by QC.
+                           Ignored when ``channels`` is set explicitly.
+    noise_threshold_uv   : RMS threshold (µV, after bandpass+notch) applied to
+                           the quiet segment.  During rest a good channel should
+                           be near-zero; anything above this is artifact/noise.
+                           Default: 30 µV.
+    qc_quiet_sec         : Optional (start_sec, end_sec) tuple defining an explicit
+                           quiet/rest window to use for QC instead of auto-detecting
+                           the bottom 20 % of the recording.  Example: (0, 10) uses
+                           the first 10 seconds.  Default: None (auto-detect).
+    overwrite            : Overwrite existing output if True.
+    verbose              : Enable DEBUG logging.
+    """
+    logging.basicConfig(
+        format="[%(levelname)s] %(message)s",
+        level=logging.DEBUG if verbose else logging.INFO,
     )
-    
+
+    data_path = str(data_path)
+
+    # Derive output path from data path when not specified
+    if save_path is None:
+        data_dir = (
+            Path(data_path).parent if Path(data_path).is_file() else Path(data_path)
+        )
+        save_path = str(data_dir / "training_dataset.npz")
+
     if os.path.exists(save_path) and not overwrite:
-        print(f"[OK] Dataset exists: {save_path}. Use --overwrite to regenerate.")
+        logging.info(f"Dataset already exists: {save_path}  (use --overwrite to rebuild)")
         return
 
-    # List of (X, y) tuples
-    combined_results = []
-    
-    files_to_process = []
-    
-    if multi_file:
-        # scan for structure.oebin
-        logging.info("Scanning for recordings...")
-        # Adapt discover to look for .oebin
-        groups = discover_and_group_files(root_dir, file_type="oebin")
-        # Flatten groups for now (each oebin is a session)
-        for g in groups.values():
-            files_to_process.extend(g)
-    elif file_path:
-        files_to_process = [file_path]
+    # ── Load ──────────────────────────────────────────────────────────────
+    logging.info(f"Loading data from: {data_path}")
+    data = load_open_ephys_session(data_path)
+
+    fs = data["sample_rate"]
+    n_ch = data["amplifier_data"].shape[0]
+    n_samples = data["amplifier_data"].shape[1]
+    logging.info(f"  {n_ch} channels | {n_samples} samples | fs={fs:.0f} Hz")
+
+    # ── Channel QC (quiet-segment method) ──────────────────────────────
+    # 1. Bandpass (10–500 Hz) + 60 Hz notch on the full recording.
+    # 2. Slide 500 ms non-overlapping windows; rank by mean-across-channels
+    #    RMS.  Bottom 20 % = rest-like / quiet segments.
+    # 3. Per-channel RMS on those quiet windows:
+    #      dead  : RMS < 0.5 µV  (open-circuit, no signal anywhere)
+    #      noisy : RMS > noise_threshold_uv  (artifact during rest – should
+    #              be near-zero on a good electrode)
+    # Also catches dead channels via a whole-recording floor check.
+    nyq = fs / 2.0
+    b_notch, a_notch = iirnotch(w0=60.0, Q=30.0, fs=fs)
+    sos_notch = tf2sos(b_notch, a_notch)
+    sos_bp    = butter(4, [10.0 / nyq, min(500.0, nyq * 0.98) / nyq],
+                       btype="band", output="sos")
+    emg_filt  = sosfiltfilt(
+        sos_bp, sosfiltfilt(sos_notch, data["amplifier_data"], axis=1), axis=1
+    )  # shape: (n_ch, n_samples)
+
+    win_samp = int(fs * 0.5)   # 500 ms windows
+    n_wins   = n_samples // win_samp
+    if n_wins < 5:
+        # fallback: not enough data to segment — use whole-recording RMS
+        rms_quiet = np.sqrt(np.mean(emg_filt ** 2, axis=1))
+        logging.warning("  QC: recording too short for quiet-segment detection; using full RMS.")
     else:
-        raise ValueError("Must specify --file_path or --multi_file")
-        
-    logging.info(f"files to process: {len(files_to_process)}")
-    
-    meta_accum = {"fs": set()}
-    
-    for fp in files_to_process:
-        logging.info(f"Processing: {fp}")
-        try:
-            # Load Data
-            data = load_open_ephys_data(fp)
-            
-            # Select channels
-            raw_names = data.get("channel_names")
-            # Reuse channel selection logic for first file or consistency check?
-            # For simplicity, re-select per file (assumes consistent naming)
-            ch_indices, ch_names = select_channels(
-                raw_names, channels, channel_map, channel_map_file, mapping_non_strict
-            )
-            
-            # Orientation Remap
-            if orientation_remap != "none":
-                # Need n_rows, n_cols from map or inference
-                # If using map
-                # infer grid
-                rows, cols = infer_grid_dimensions(ch_names)
-                if rows and cols:
-                     orient = parse_orientation_from_filename(fp) if orientation == "auto" else orientation
-                     if orient:
-                         ch_indices = apply_grid_permutation(ch_indices, rows, cols, orientation_remap)
-                         logging.info(f"   Applied {orientation_remap} (found {orient})")
-            
-            # Process
-            X, y, meta = process_recording(
-                data, fp, root_dir, events_file, window_ms, step_ms,
-                paper_style, ch_indices, 
-                ignore_labels=ignore_labels,
-                ignore_case=ignore_case,
-                keep_trial=keep_trial_label
-            )
-            
-            if len(X) > 0:
-                combined_results.append((X, y))
-                meta_accum["fs"].add(meta["fs"])
-                logging.info(f"   -> {len(X)} windows")
+        if qc_quiet_sec is not None:
+            # explicit quiet window provided by the caller
+            t_start, t_end = qc_quiet_sec
+            s_start = max(0, int(t_start * fs))
+            s_end   = min(n_samples, int(t_end * fs))
+            if s_end <= s_start:
+                logging.warning("  QC: --qc_quiet_sec range is empty; falling back to auto-detect.")
+                qc_quiet_sec = None
             else:
-                logging.warning("   -> No windows extracted")
-                
-        except Exception as e:
-            logging.error(f"Failed to process {fp}: {e}")
-            if verbose:
-                import traceback
-                traceback.print_exc()
+                quiet_seg  = emg_filt[:, s_start:s_end]
+                rms_quiet  = np.sqrt(np.mean(quiet_seg ** 2, axis=1))
+                dur = (s_end - s_start) / fs
+                logging.info(f"  QC: using explicit quiet window {t_start:.1f}–{t_end:.1f}s "
+                             f"({dur:.1f}s, {s_end - s_start} samples)")
 
-    if not combined_results:
-        logging.error("No valid data collected.")
+        if qc_quiet_sec is None:
+            # auto-detect bottom 20 % of windows by global RMS
+            wins = emg_filt[:, : n_wins * win_samp].reshape(n_ch, n_wins, win_samp)
+            global_rms = np.sqrt(np.mean(wins ** 2, axis=(0, 2)))  # (n_wins,)
+            thresh_pct = np.percentile(global_rms, 20)
+            quiet_mask = global_rms <= thresh_pct                   # bottom 20 %
+            n_quiet    = int(quiet_mask.sum())
+            logging.info(f"  QC: using {n_quiet}/{n_wins} quiet windows "
+                         f"(≤20th pct global RMS {thresh_pct:.1f} µV) for channel assessment")
+            quiet_data = wins[:, quiet_mask, :]          # (n_ch, n_quiet, win_samp)
+            rms_quiet  = np.sqrt(np.mean(quiet_data ** 2, axis=(1, 2)))  # (n_ch,)
+
+    dead_rms_uv = 0.5
+    bad_channels = {
+        i for i in range(n_ch)
+        if rms_quiet[i] < dead_rms_uv or rms_quiet[i] > noise_threshold_uv
+    }
+    good_channels = sorted(set(range(n_ch)) - bad_channels)
+    logging.info(
+        f"  QC: {len(good_channels)} good, {len(bad_channels)} bad  "
+        f"(median quiet-RMS {np.median(rms_quiet):.1f} µV, "
+        f"thresholds: dead<{dead_rms_uv} µV, noisy>{noise_threshold_uv:.0f} µV)"
+    )
+    if bad_channels:
+        logging.warning(f"  Bad channels: {sorted(bad_channels)}")
+        if not auto_select_channels:
+            logging.warning(
+                "  Pass --auto_select_channels to drop them automatically."
+            )
+    if auto_select_channels and channels is None:
+        channels = good_channels
+        logging.info(f"  Auto-selected {len(channels)} good channels.")
+
+    # ── Labels ────────────────────────────────────────────────────────────
+    # Honour an explicit path; otherwise process_recording auto-discovers
+    # labels.csv / events.csv next to the data file via find_event_for_file.
+    events_file = labels_path if (labels_path and Path(labels_path).is_file()) else None
+    if events_file:
+        logging.info(f"Using labels: {events_file}")
+
+    # ── Build features ────────────────────────────────────────────────────
+    root_dir = str(Path(data_path).parent if Path(data_path).is_file() else Path(data_path))
+
+    X, y, meta = process_recording(
+        data=data,
+        file_path=data_path,
+        root_dir=root_dir,
+        events_file=events_file,
+        window_ms=window_ms,
+        step_ms=step_ms,
+        channels=channels,
+        ignore_labels=ignore_labels,
+        ignore_case=True,
+        keep_trial=False,
+    )
+
+    if len(X) == 0:
+        logging.error("No windows extracted — check your data and labels paths.")
         return
 
-    # Concatenate
-    X_all = np.concatenate([r[0] for r in combined_results])
-    y_all = np.concatenate([r[1] for r in combined_results])
-    
-    final_meta = {
-        "fs": list(meta_accum["fs"])[0] if meta_accum["fs"] else 0,
-        "selected_channels": ch_indices, # from last file
-        "channel_names": ch_names
-    }
-    
-    save_dataset(save_path, X_all, y_all, final_meta, window_ms, step_ms, channel_map, channel_map_file)
-    logging.info(f"Completed in {time() - start_time:.1f}s")
+    class_counts = {c: int(np.sum(y == c)) for c in sorted(set(y))}
+    logging.info(f"Extracted {len(X)} windows — classes: {class_counts}")
+
+    # ── Save ──────────────────────────────────────────────────────────────
+    save_dataset(save_path, X, y, meta, window_ms, step_ms, ignore_labels=ignore_labels)
+    logging.info(f"Dataset saved → {save_path}")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+_HERE = Path(__file__).parent
+_DEFAULT_DATA   = _HERE / "data" / "gestures"
+_DEFAULT_LABELS = _HERE / "data" / "labels.csv"
+_DEFAULT_SAVE   = _HERE / "data" / "training_dataset.npz"
+_CONFIG_FILE    = _HERE / ".gesture_config"
+
+
+def _parse_args():
+    p = argparse.ArgumentParser(
+        description="Build a windowed-feature EMG dataset from raw EMG data.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    p.add_argument(
+        "--data_path", default=None,
+        help=f"Path to EMG data (CSV / .npz / .oebin).  Default: {_DEFAULT_DATA}",
+    )
+    p.add_argument(
+        "--labels_path", default=None,
+        help="Path to a labels/events file (CSV or TXT, transition format).  "
+             "If omitted the script auto-discovers a file named labels.csv, "
+             "events.csv, emg.txt, labels.txt, or {recording}_emg.txt next to "
+             "the data folder.",
+    )
+    p.add_argument(
+        "--save_path", default=None,
+        help=f"Output .npz file.  Default: {_DEFAULT_SAVE}",
+    )
+    p.add_argument("--window_ms", type=int, default=None, help="Feature window in ms (default: 200)")
+    p.add_argument("--step_ms",   type=int, default=None, help="Window step in ms (default: 50)")
+    p.add_argument(
+        "--channels", type=int, nargs="+", default=None,
+        help="Channel indices to keep (default: all).  E.g. --channels 0 1 2 3",
+    )
+    p.add_argument(
+        "--ignore_labels", nargs="+", default=None,
+        help="Labels to exclude (e.g. --ignore_labels rest unknown)",
+    )
+    p.add_argument(
+        "--noise_threshold", type=float, default=30.0,
+        help="RMS threshold (µV, after bandpass+notch) applied to the quietest 20%% "
+             "of the recording.  Good channels should be near-zero during rest; "
+             "anything above this is flagged as noisy/artifact. (default: 30)",
+    )
+    p.add_argument(
+        "--qc_quiet_sec", type=float, nargs=2, default=None, metavar=("START", "END"),
+        help="Explicit quiet/rest window (seconds) to use for channel QC instead of "
+             "auto-detecting the bottom 20%% of the recording.  "
+             "Example: --qc_quiet_sec 0 10  uses the first 10 s.",
+    )
+    p.add_argument(
+        "--auto_select_channels", action="store_true",
+        help="Automatically drop channels flagged bad by QC (robust Z-score ±3 SD "
+             "or high powerline ratio).  Flatline checks are disabled in batch mode "
+             "since quiet rest-period channels are healthy.",
+    )
+    p.add_argument("--overwrite", action="store_true", help="Overwrite existing output")
+    p.add_argument("--config_file", default=None, help="Optional .gesture_config file path")
+    p.add_argument("--verbose",   action="store_true")
+    return p.parse_args()
+
+
+def main():
+    args = _parse_args()
+
+    # Load optional config for persistent defaults
+    cfg = {}
+    config_path = args.config_file or _CONFIG_FILE
+    if Path(config_path).is_file():
+        cfg = load_simple_config(str(config_path))
+
+    # Resolve final values: CLI → config → hard default
+    data_path   = args.data_path   or cfg.get("data_path")   or str(_DEFAULT_DATA)
+    labels_path = args.labels_path or cfg.get("labels_path") or None
+    save_path   = args.save_path   or cfg.get("save_path")   or None
+    window_ms   = args.window_ms   or int(cfg.get("window_ms", 200))
+    step_ms     = args.step_ms     or int(cfg.get("step_ms",   50))
+    verbose     = args.verbose     or (cfg.get("verbose", "false").lower() == "true")
+
+    # Validate that data file exists before we try to load it
+    if not Path(data_path).exists():
+        print(f"[ERROR] Data file not found: {data_path}")
+        print("        Pass --data_path to point at your Open Ephys recording.")
+        return 1
+
+    build_dataset(
+        data_path=data_path,
+        labels_path=labels_path,
+        save_path=save_path,
+        window_ms=window_ms,
+        step_ms=step_ms,
+        channels=args.channels,
+        ignore_labels=args.ignore_labels,
+        auto_select_channels=args.auto_select_channels,
+        noise_threshold_uv=args.noise_threshold,
+        qc_quiet_sec=tuple(args.qc_quiet_sec) if args.qc_quiet_sec else None,
+        overwrite=args.overwrite,
+        verbose=verbose,
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--root_dir")
-    p.add_argument("--file_path")
-    p.add_argument("--multi_file", action="store_true")
-    p.add_argument("--config_file")
-    p.add_argument("--overwrite", action="store_true")
-    p.add_argument("--paper_style", action="store_true")
-    p.add_argument("--window_ms", type=int, default=200)
-    p.add_argument("--step_ms", type=int, default=50)
-    
-    # Add other args as needed
-    args = p.parse_args()
-    
-    # Load config
-    cfg = load_simple_config(Path(__file__).parent / ".gesture_config")
-    if args.config_file:
-        cfg.update(load_simple_config(args.config_file))
-        
-    root_dir = args.root_dir or cfg.get("root_dir")
-    if not root_dir:
-        root_dir = prompt_directory("Select Root Directory")
-        
-    if not args.file_path and not args.multi_file:
-        # Logic to check config or prompt
-        if cfg.get("multi_file"):
-            args.multi_file = True
-        else:
-             # simple prompt
-             pass
-
-    build_dataset(
-        root_dir=root_dir,
-        file_path=args.file_path or cfg.get("file_path"),
-        multi_file=args.multi_file,
-        window_ms=args.window_ms,
-        step_ms=args.step_ms,
-        paper_style=args.paper_style,
-        overwrite=args.overwrite
-    )
+    raise SystemExit(main())

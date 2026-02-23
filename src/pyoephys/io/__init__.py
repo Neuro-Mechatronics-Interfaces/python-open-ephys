@@ -14,7 +14,7 @@ from ._file_utils import (
     parse_event_file
 )
 from ._grid_utils import infer_grid_dimensions, apply_grid_permutation
-from ._dataset_utils import process_recording, save_dataset, load_open_ephys_data, select_channels
+from ._dataset_utils import process_recording, process_recordings, save_dataset, load_dataset, load_open_ephys_data, select_channels, assess_channel_quality
 from ._config_utils import load_simple_config, prompt_directory, prompt_file, get_or_prompt_value
 from ._utilities import (
     parse_numeric_args,

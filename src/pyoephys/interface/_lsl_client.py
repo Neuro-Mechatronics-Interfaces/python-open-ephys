@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import threading
+import warnings
 import numpy as np
 from typing import Optional, Tuple, Sequence
 
@@ -35,6 +36,12 @@ class OldLSLClient:
         auto_start=False,
         verbose=False,
     ):
+        warnings.warn(
+            "OldLSLClient is deprecated and will be removed in a future version. "
+            "Use LSLClient instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if (stream_name is None) == (stream_type is None):
             raise ValueError("Provide exactly one of stream_name or stream_type")
 
@@ -317,6 +324,17 @@ class LSLClient:
                 y = np.hstack((self._buf_y[:, start:], self._buf_y[:, :end]))
                 t = np.concatenate((self._buf_t[start:], self._buf_t[:end]))
         return y.copy(), t.copy()
+
+    def get_latest_window(self, window_ms: int) -> np.ndarray:
+        """Return the latest ``window_ms`` milliseconds of data as shape (C, samples).
+
+        Convenience wrapper around :meth:`get_latest` that converts a
+        duration in milliseconds to a sample count.
+        """
+        if self.fs_hz is None or self.fs_hz <= 0:
+            raise RuntimeError("Sample rate not yet known; call start() first.")
+        n = int(round(self.fs_hz * window_ms / 1000.0))
+        return self.get_latest(n)[0]
 
     def get_window(self, seconds: float) -> Tuple[np.ndarray, np.ndarray]:
         """Return the last `seconds` of data."""
