@@ -47,7 +47,7 @@ TARGET_SPECS = {
     "index_only": ["index_mcp", "index_pip", "index_dip"],
 }
 
-DEFAULT_TARGET_SPEC = "finger5"
+DEFAULT_TARGET_SPEC = "full14"
 
 
 def get_target_keys(spec=None):

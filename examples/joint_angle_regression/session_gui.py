@@ -108,6 +108,8 @@ class LSLMonitor:
         self.imu_inlet = None
         self.emg_connected = False
         self.imu_connected = False
+        self.last_emg_data_time = 0.0
+        self.last_imu_data_time = 0.0
 
     def _read_stream_name(self, widget):
         try:
@@ -121,7 +123,7 @@ class LSLMonitor:
         if not stream_name or resolve_byprop is None or StreamInlet is None:
             return None
         try:
-            streams = resolve_byprop("name", stream_name, timeout=0.05)
+            streams = resolve_byprop("name", stream_name, timeout=0.01)
             if streams:
                 return StreamInlet(streams[0])
         except Exception:
@@ -133,11 +135,6 @@ class LSLMonitor:
             now = _clock()
             dt = max(now - self.last_update, 1e-6)
             poll_rate = 1.0 / dt
-
-            # Update both EMG and IMU rate labels with the same poll frequency
-            self.labels["rate"].setText(f"Rate: {poll_rate:.1f} Hz")
-            if "imu_rate" in self.labels:
-                self.labels["imu_rate"].setText(f"Rate: {poll_rate:.1f} Hz")
 
             self.last_update = now
 
@@ -189,6 +186,7 @@ class LSLMonitor:
                             f"Shape: {self.last_emg_chunk.shape}"
                         )
                         self.emg_connected = True
+                        self.last_emg_data_time = now
                 except Exception:
                     self.emg_inlet = None
                     self.emg_connected = False
@@ -218,6 +216,7 @@ class LSLMonitor:
                             f"Shape: {self.last_imu_chunk.shape}"
                         )
                         self.imu_connected = True
+                        self.last_imu_data_time = now
                 except Exception:
                     self.imu_inlet = None
                     self.imu_connected = False
@@ -227,25 +226,67 @@ class LSLMonitor:
             if self.imu_inlet is None:
                 self.imu_connected = False
 
-            status_text = "● Connected" if self.emg_connected else "● Waiting..."
-            status_color = "#44ff44" if self.emg_connected else "#ffaa00"
+            # Check for stale data (no new data for >1 second)
+            emg_stale = False
+            imu_stale = False
+            if self.emg_connected and self.last_emg_data_time > 0:
+                emg_age = now - self.last_emg_data_time
+                if emg_age > 1.0:
+                    emg_stale = True
+                    self.emg_connected = False
+            if self.imu_connected and self.last_imu_data_time > 0:
+                imu_age = now - self.last_imu_data_time
+                if imu_age > 1.0:
+                    imu_stale = True
+                    self.imu_connected = False
+
+            # Update EMG status with stale detection
+            if self.emg_connected:
+                status_text = "● Connected"
+                status_color = "#44ff44"
+            elif emg_stale:
+                status_text = "● Stale"
+                status_color = "#d9b44a"
+            else:
+                status_text = "● Waiting..."
+                status_color = "#ffaa00"
             self.labels["status"].setText(status_text)
             self.labels["status"].setStyleSheet(
                 f"color: {status_color}; font-weight: bold;"
             )
 
+            # Update IMU status with stale detection
             if "imu_status" in self.labels:
-                imu_status_text = (
-                    "● Connected" if self.imu_connected else "● Waiting..."
-                )
-                imu_status_color = "#44ff44" if self.imu_connected else "#ffaa00"
+                if self.imu_connected:
+                    imu_status_text = "● Connected"
+                    imu_status_color = "#44ff44"
+                elif imu_stale:
+                    imu_status_text = "● Stale"
+                    imu_status_color = "#d9b44a"
+                else:
+                    imu_status_text = "● Waiting..."
+                    imu_status_color = "#ffaa00"
                 self.labels["imu_status"].setText(imu_status_text)
                 self.labels["imu_status"].setStyleSheet(
                     f"color: {imu_status_color}; font-weight: bold;"
                 )
+
+            # Show polling rate only when stream is actively receiving data.
+            self.labels["rate"].setText(
+                f"Rate: {poll_rate:.1f} Hz" if self.emg_connected else "Rate: N/A Hz"
+            )
+            if "imu_rate" in self.labels:
+                self.labels["imu_rate"].setText(
+                    f"Rate: {poll_rate:.1f} Hz"
+                    if self.imu_connected
+                    else "Rate: N/A Hz"
+                )
         except Exception:
             self.labels["status"].setText("● Error")
             self.labels["status"].setStyleSheet("color: #ff4444; font-weight: bold;")
+            self.labels["rate"].setText("Rate: N/A Hz")
+            if "imu_rate" in self.labels:
+                self.labels["imu_rate"].setText("Rate: N/A Hz")
 
 
 class CollapsibleSection(QFrame):
@@ -415,25 +456,25 @@ class FlowDiagram(QWidget):
         }
         self.compact = True
         self.blocks["sync"].set_size_profile(
-            compact_width=65, full_width=85, min_height=60
+            compact_width=65, full_width=85, min_height=50
         )
         self.blocks["buffer"].set_size_profile(
-            compact_width=75, full_width=110, min_height=60
+            compact_width=75, full_width=110, min_height=50
         )
         self.blocks["features"].set_size_profile(
-            compact_width=80, full_width=115, min_height=60
+            compact_width=80, full_width=115, min_height=50
         )
         self.blocks["infer"].set_size_profile(
-            compact_width=65, full_width=90, min_height=55
+            compact_width=65, full_width=90, min_height=48
         )
         self.blocks["compare"].set_size_profile(
-            compact_width=75, full_width=105, min_height=60
+            compact_width=75, full_width=105, min_height=50
         )
         self.blocks["train"].set_size_profile(
-            compact_width=70, full_width=95, min_height=50
+            compact_width=70, full_width=95, min_height=45
         )
         self.blocks["saved"].set_size_profile(
-            compact_width=70, full_width=95, min_height=50
+            compact_width=70, full_width=95, min_height=45
         )
         self.blocks["filters"].set_size_profile(compact_width=80, full_width=110)
         self.blocks["target"].set_size_profile(compact_width=80, full_width=110)
@@ -615,6 +656,7 @@ class SessionConsole(QWidget):
 
         self.log_buffer = []
         self.angle_inlet = None
+        self.last_angle_inlet_resolve = 0.0
         self.last_angle_seen = 0.0
         self.last_angle_rate_hz = 0.0
         self.angle_count = 0
@@ -627,7 +669,12 @@ class SessionConsole(QWidget):
         self.snapshot_on_open_path = None
         self.snapshot_delay_ms = 200
         self.marker_inlet = None
+        self.last_marker_inlet_resolve = 0.0
+        self.last_marker_seen = 0.0
         self.marker_buffer = []
+        self.last_lsl_status_check = 0.0
+        self.lsl_status_check_interval_s = 0.5
+        self.inlet_resolve_interval_s = 0.25
 
         # In-GUI recording state
         self.recording_active = False
@@ -735,7 +782,7 @@ class SessionConsole(QWidget):
         )
         self.timer = QTimer()
         self.timer.timeout.connect(self._poll_all)
-        self.timer.start(200)
+        self.timer.start(50)
 
     def _default_feature_extractor_path(self):
         local_path = Path(__file__).parent / "models" / "pretrained_transformer.h5"
@@ -766,7 +813,7 @@ class SessionConsole(QWidget):
         top_row.addWidget(self._build_emg_panel(), stretch=0)
         top_row.addWidget(self._build_imu_panel(), stretch=0)
         top_row.addWidget(self._build_lsl_panel(), stretch=0)
-        top_row.addWidget(self._build_live_panel(), stretch=0)
+        top_row.addWidget(self._build_live_panel(), stretch=1)
         content_layout.addLayout(top_row)
         mid_row = QHBoxLayout()
         mid_row.setSpacing(8)
@@ -995,8 +1042,8 @@ class SessionConsole(QWidget):
         emg_row = QHBoxLayout()
         emg_row.addWidget(QLabel("Stream"))
         self.emg_stream_name = QLineEdit("OpenEphys_EMG")
-        self.emg_stream_name.setMinimumWidth(120)
-        self.emg_stream_name.setMaximumWidth(180)
+        self.emg_stream_name.setMinimumWidth(80)
+        self.emg_stream_name.setMaximumWidth(130)
         emg_row.addWidget(self.emg_stream_name, stretch=1)
 
         status = QLabel("● Disconnected")
@@ -1008,8 +1055,8 @@ class SessionConsole(QWidget):
         layout.addWidget(status)
         layout.addWidget(shape)
         layout.addWidget(rate)
-        group.setMinimumWidth(180)
-        group.setMaximumWidth(240)
+        group.setMinimumWidth(140)
+        group.setMaximumWidth(200)
 
         self.mr_labels = {
             "status": status,
@@ -1025,8 +1072,8 @@ class SessionConsole(QWidget):
         imu_row = QHBoxLayout()
         imu_row.addWidget(QLabel("Stream"))
         self.imu_stream_name = QLineEdit("OpenEphys_IMU")
-        self.imu_stream_name.setMinimumWidth(120)
-        self.imu_stream_name.setMaximumWidth(180)
+        self.imu_stream_name.setMinimumWidth(80)
+        self.imu_stream_name.setMaximumWidth(130)
         imu_row.addWidget(self.imu_stream_name, stretch=1)
 
         imu_status = QLabel("● Disconnected")
@@ -1038,8 +1085,8 @@ class SessionConsole(QWidget):
         layout.addWidget(imu_status)
         layout.addWidget(imu_shape)
         layout.addWidget(imu_rate)
-        group.setMinimumWidth(180)
-        group.setMaximumWidth(240)
+        group.setMinimumWidth(140)
+        group.setMaximumWidth(200)
 
         self.mr_labels.update(
             {
@@ -1174,7 +1221,7 @@ class SessionConsole(QWidget):
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(6)
 
-        default_out = Path(__file__).parent / "data" / "session_001.npz"
+        default_out = self._next_session_path()
         self.record_out = QLineEdit(str(default_out))
         out_row = QHBoxLayout()
         out_row.addWidget(self.record_out)
@@ -1204,6 +1251,17 @@ class SessionConsole(QWidget):
         self.record_hand = QComboBox()
         self.record_hand.addItems(["Slot 0 (remapped)", "Slot 1"])
 
+        self.target_angle_combo = QComboBox()
+        self.target_angle_combo.addItem("All 14 joints (full14)", "full14")
+        self.target_angle_combo.addItem("5 MCP flexion (finger5)", "finger5")
+        self.target_angle_combo.addItem("Index only (3 DOF)", "index_only")
+        # Set initial selection to match current target_spec
+        for i in range(self.target_angle_combo.count()):
+            if self.target_angle_combo.itemData(i) == self.target_spec:
+                self.target_angle_combo.setCurrentIndex(i)
+                break
+        self.target_angle_combo.currentIndexChanged.connect(self._on_target_spec_changed)
+
         row = 0
         layout.addWidget(QLabel("Output"), row, 0)
         layout.addLayout(out_row, row, 1)
@@ -1225,6 +1283,9 @@ class SessionConsole(QWidget):
         row += 1
         layout.addWidget(QLabel("Hand slot"), row, 0)
         layout.addWidget(self.record_hand, row, 1)
+        row += 1
+        layout.addWidget(QLabel("Target angles"), row, 0)
+        layout.addWidget(self.target_angle_combo, row, 1)
         section = CollapsibleSection("Recording", content, default_open=False)
         return section
 
@@ -1697,16 +1758,10 @@ class SessionConsole(QWidget):
         self.compare_bar_label = QLabel("")
         self.compare_bar_label.setStyleSheet("font-family: Consolas, monospace;")
         self.compare_bar_label.setWordWrap(True)
+        self.compare_bar_label.setVisible(False)
         layout.addWidget(self.compare_bar_label)
 
-        self.lsl_hint_label = QLabel(
-            "LSL: angles should increment while GUI broadcasts"
-        )
-        self.lsl_hint_label.setStyleSheet("color: #9aa3ad;")
-        layout.addWidget(self.lsl_hint_label)
-
         group.setMinimumWidth(210)
-        group.setMaximumWidth(260)
         return group
 
     def _build_filter_panel(self):
@@ -1782,20 +1837,14 @@ class SessionConsole(QWidget):
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setPlaceholderText("Process output will appear here...")
-        self.log_view.setMinimumHeight(140)
-        self.log_view.setMaximumHeight(200)
+        self.log_view.setMinimumHeight(100)
+        self.log_view.setMaximumHeight(150)
         self.log_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self.log_view)
         return group
 
     def _poll_all(self):
         self.monitor.poll()
-        self._check_lsl(
-            self.angle_stream_name.text().strip(), self.angle_status, "Angles"
-        )
-        self._check_lsl(
-            self.marker_stream_name.text().strip(), self.marker_status, "Markers"
-        )
         self._poll_angle_stream()
         self._poll_marker_stream()
         self._update_ready_state()
@@ -1814,11 +1863,14 @@ class SessionConsole(QWidget):
             label.setStyleSheet("color: #ffaa00; font-weight: bold;")
             return
         try:
-            # Use very short timeout (50ms) for same-machine detection - instant discovery
-            streams = resolve_byprop("name", stream_name, timeout=0.05)
+            # Keep status checks fast to avoid UI hitching.
+            streams = resolve_byprop("name", stream_name, timeout=0.01)
             if streams:
-                label.setText("● Connected")
-                label.setStyleSheet("color: #44ff44; font-weight: bold;")
+                # Don't overwrite "Stale" – data-flow staleness takes priority
+                # over the LSL resolver cache which lingers after disconnect.
+                if "Stale" not in label.text():
+                    label.setText("● Connected")
+                    label.setStyleSheet("color: #44ff44; font-weight: bold;")
             else:
                 label.setText("● Waiting...")
                 label.setStyleSheet("color: #ffaa00; font-weight: bold;")
@@ -1880,27 +1932,42 @@ class SessionConsole(QWidget):
     def _poll_angle_stream(self):
         if not HAS_LSL or StreamInlet is None:
             return
-        if (
-            "Connected" not in self.angle_status.text()
-            and "Stale" not in self.angle_status.text()
-        ):
+        name = self.angle_stream_name.text().strip()
+        if not name:
             self.angle_inlet = None
-            self.last_angle_rate_hz = 0.0
+            self.angle_status.setText("\u25cf Waiting...")
+            self.angle_status.setStyleSheet("color: #ffaa00; font-weight: bold;")
             self.hand_rate_label.setText("Rate: N/A Hz")
             return
+        # Resolve inlet if we don't have one (throttled to reduce UI blocking)
         if self.angle_inlet is None:
+            now = _clock()
+            if now - self.last_angle_inlet_resolve >= self.inlet_resolve_interval_s:
+                self.last_angle_inlet_resolve = now
+                try:
+                    streams = resolve_byprop("name", name, timeout=0.01)
+                    if streams:
+                        self.angle_inlet = StreamInlet(streams[0])
+                except Exception:
+                    self.angle_inlet = None
+        # If data has been stale for >2 s, consider the stream disconnected:
+        # null out the inlet so the system transitions to "waiting".
+        if self.angle_inlet and self.last_angle_seen:
+            stale_age = _clock() - self.last_angle_seen
+            if stale_age > 2.0:
+                self.angle_inlet = None
+                self.angle_count = 0
+                self.last_angle_seen = 0.0
+                self.last_angle_rate_hz = 0.0
+        # Pull data
+        if self.angle_inlet:
             try:
-                streams = resolve_byprop(
-                    "name", self.angle_stream_name.text().strip(), timeout=0.05
+                samples, timestamps = self.angle_inlet.pull_chunk(
+                    timeout=0.0, max_samples=32
                 )
-                if streams:
-                    self.angle_inlet = StreamInlet(streams[0])
             except Exception:
                 self.angle_inlet = None
-        if self.angle_inlet:
-            samples, timestamps = self.angle_inlet.pull_chunk(
-                timeout=0.0, max_samples=32
-            )
+                samples, timestamps = [], []
             if samples:
                 now = _clock()
                 chunk_count = len(samples)
@@ -1932,7 +1999,21 @@ class SessionConsole(QWidget):
                 else:
                     if self.angle_match_label:
                         self.angle_match_label.setText("Angle match: waiting for EMG")
+        # --- Drive status label from actual data flow ---
         age = _clock() - self.last_angle_seen if self.last_angle_seen else None
+        if age is not None and age < 1.0:
+            self.angle_status.setText("\u25cf Connected")
+            self.angle_status.setStyleSheet("color: #44ff44; font-weight: bold;")
+        elif age is not None and age < 2.0:
+            self.angle_status.setText("\u25cf Stale")
+            self.angle_status.setStyleSheet("color: #d9b44a; font-weight: bold;")
+        elif self.angle_inlet is not None and self.angle_count == 0:
+            # Inlet resolved but no data yet
+            self.angle_status.setText("\u25cf Connected")
+            self.angle_status.setStyleSheet("color: #44ff44; font-weight: bold;")
+        else:
+            self.angle_status.setText("\u25cf Waiting...")
+            self.angle_status.setStyleSheet("color: #ffaa00; font-weight: bold;")
         self.last_angle_label.setText(f"Angles: {self.angle_count}")
         self.angle_age_label.setText(
             f"Age: {age:.2f}s" if age is not None else "Age: N/A"
@@ -1946,24 +2027,36 @@ class SessionConsole(QWidget):
     def _poll_marker_stream(self):
         if not HAS_LSL or StreamInlet is None:
             return
-        if "Connected" not in self.marker_status.text():
+        name = self.marker_stream_name.text().strip()
+        if not name:
             self.marker_inlet = None
+            self.marker_status.setText("\u25cf Waiting...")
+            self.marker_status.setStyleSheet("color: #ffaa00; font-weight: bold;")
             return
+        # Resolve inlet if we don't have one (throttled)
         if self.marker_inlet is None:
+            now = _clock()
+            if now - self.last_marker_inlet_resolve >= self.inlet_resolve_interval_s:
+                self.last_marker_inlet_resolve = now
+                try:
+                    streams = resolve_byprop(
+                        "name", name, timeout=0.01
+                    )
+                    if streams:
+                        self.marker_inlet = StreamInlet(streams[0])
+                except Exception:
+                    self.marker_inlet = None
+        if self.marker_inlet:
             try:
-                streams = resolve_byprop(
-                    "name", self.marker_stream_name.text().strip(), timeout=0.05
+                samples, timestamps = self.marker_inlet.pull_chunk(
+                    timeout=0.0, max_samples=32
                 )
-                if streams:
-                    self.marker_inlet = StreamInlet(streams[0])
             except Exception:
                 self.marker_inlet = None
-        if self.marker_inlet:
-            samples, timestamps = self.marker_inlet.pull_chunk(
-                timeout=0.0, max_samples=32
-            )
+                samples, timestamps = [], []
             if samples:
                 now = _clock()
+                self.last_marker_seen = now
                 for idx, sample in enumerate(samples):
                     ts = None
                     if timestamps and idx < len(timestamps):
@@ -1972,6 +2065,19 @@ class SessionConsole(QWidget):
                     self.marker_buffer.append((tstamp, sample[0]))
                 if len(self.marker_buffer) > 2000:
                     self.marker_buffer = self.marker_buffer[-2000:]
+        # Drive status label from data flow
+        marker_age = (
+            _clock() - self.last_marker_seen if self.last_marker_seen else None
+        )
+        if marker_age is not None and marker_age < 2.0:
+            self.marker_status.setText("\u25cf Connected")
+            self.marker_status.setStyleSheet("color: #44ff44; font-weight: bold;")
+        elif self.marker_inlet is not None and not self.marker_buffer:
+            self.marker_status.setText("\u25cf Connected")
+            self.marker_status.setStyleSheet("color: #44ff44; font-weight: bold;")
+        else:
+            self.marker_status.setText("\u25cf Waiting...")
+            self.marker_status.setStyleSheet("color: #ffaa00; font-weight: bold;")
 
     def _update_ready_state(self):
         mr_ok = self.monitor.emg_connected
@@ -2062,23 +2168,6 @@ class SessionConsole(QWidget):
         )
         self.flow_blocks["hand"].setToolTip(f"LSL angles stream\n{hand_detail}")
 
-        # Update panel readiness based on staleness
-        if hand_ok and not hand_stale:
-            self.angle_status.setText("● Connected")
-            self.angle_status.setStyleSheet("color: #44ff44; font-weight: bold;")
-            self.ready_status.setText("Ready: YES")
-            self.ready_status.setStyleSheet("color: #44ff44; font-weight: bold;")
-        elif hand_ok and hand_stale:
-            self.angle_status.setText("● Stale")
-            self.angle_status.setStyleSheet("color: #d9b44a; font-weight: bold;")
-            self.ready_status.setText("Ready: NO")
-            self.ready_status.setStyleSheet("color: #d9b44a; font-weight: bold;")
-        else:
-            self.angle_status.setText("● Waiting...")
-            self.angle_status.setStyleSheet("color: #ffaa00; font-weight: bold;")
-            self.ready_status.setText("Ready: NO")
-            self.ready_status.setStyleSheet("color: #ff6666; font-weight: bold;")
-
         target_ok = hand_ok
         target_detail = f"QC: age<{self.record_max_age * 1000:.0f}ms | NaN drop"
         if hand_ok and not hand_stale:
@@ -2099,7 +2188,7 @@ class SessionConsole(QWidget):
 
         if self.last_angle_match_ok is None:
             sync_ok = None
-            sync_status = "Sync: idle"
+            sync_status = "Sync: waiting"
             sync_detail = "Waiting for windows"
         else:
             sync_ok = bool(self.last_angle_match_ok)
@@ -2110,11 +2199,19 @@ class SessionConsole(QWidget):
                 if delta is not None
                 else ""
             )
-        if hand_stale:
+        
+        # Keep sync yellow until all inputs are green
+        if not emg_ok or not (hand_ok and not hand_stale):
             sync_state = "warn"
-            sync_status = "Sync: waiting (stale)"
+            if not emg_ok and not hand_ok:
+                sync_status = "Sync: waiting (no inputs)"
+            elif not emg_ok:
+                sync_status = "Sync: waiting (no EMG)"
+            elif not hand_ok or hand_stale:
+                sync_status = "Sync: waiting (no angles)"
         else:
-            sync_state = sync_ok
+            # All inputs ready, show actual sync state
+            sync_state = sync_ok if sync_ok is not None else "warn"
         self.flow_blocks["sync"].set_state(sync_state, sync_status, sync_detail)
         self.flow_blocks["sync"].setToolTip(
             f"Sync/match\n{sync_detail or 'Waiting for windows'}"
@@ -2238,6 +2335,18 @@ class SessionConsole(QWidget):
 
     def _on_arm_toggled(self, checked):
         self.arm_button.setText("Armed" if checked else "Arm Recording")
+
+    def _on_target_spec_changed(self, idx):
+        spec = self.target_angle_combo.itemData(idx)
+        if spec:
+            self.target_spec = spec
+            self.target_keys = (
+                get_target_keys(spec) if get_target_keys else ANGLE_KEYS
+            )
+            self.compare_joints = list(self.target_keys)
+            self.compare_joints_idx = []
+            n = len(self.target_keys)
+            self._append_log(f"[config] Target angles: {spec} ({n} joints)")
 
     def _start_prompts(self, btn_start, btn_stop):
         if self.proc_prompts:
@@ -3166,6 +3275,17 @@ class SessionConsole(QWidget):
             if target is self.prompt_plan:
                 self._load_prompt_preview()
 
+    @staticmethod
+    def _next_session_path():
+        """Return the next available session_NNN.npz path."""
+        data_dir = Path(__file__).parent / "data"
+        n = 1
+        while True:
+            candidate = data_dir / f"session_{n:03d}.npz"
+            if not candidate.exists():
+                return candidate
+            n += 1
+
     def _pick_save(self, target, title):
         path, _ = QFileDialog.getSaveFileName(self, title)
         if path:
@@ -3425,6 +3545,7 @@ class SessionConsole(QWidget):
                 self.compare_label.setText(f"Compare: RMSE={rmse:.2f} MAE={mae:.2f}")
             if self.compare_bar_label:
                 self.compare_bar_label.setText(self._render_compare_bars(idxs, diff))
+                self.compare_bar_label.setVisible(True)
 
             self.compare_emg_buf = self.compare_emg_buf[stride:]
             self.compare_ts_buf = self.compare_ts_buf[stride:]
@@ -3626,6 +3747,9 @@ class SessionConsole(QWidget):
                 f"no_angle={self.record_skip_no_angle}, old_angle={self.record_skip_old_angle}, "
                 f"nan_angle={self.record_skip_nan_angle}, filled_nan={self.record_fill_nan_angle})"
             )
+            # Auto-advance to next available session number
+            next_path = self._next_session_path()
+            self.record_out.setText(str(next_path))
 
     def _load_prompt_preview(self):
         path = self.prompt_plan.text().strip()
@@ -3665,36 +3789,36 @@ class SessionConsole(QWidget):
         self.setStyleSheet("""
         QWidget {
             font-size: 11px;
-            background: #1c1f24;
-            color: #e6e8eb;
+            background: #262b33;
+            color: #eef1f4;
         }
         #flow_block {
-            border: 1px solid #2a2f36;
+            border: 1px solid #3a414b;
             border-radius: 8px;
-            background: #20242b;
+            background: #2d343d;
         }
         #flow_block[state="ok"] {
-            border: 1px solid #3aa66f;
-            background: #1f3327;
+            border: 1px solid #58b985;
+            background: #2b4333;
         }
         #flow_block[state="bad"] {
-            border: 1px solid #c75d5d;
-            background: #3a2222;
+            border: 1px solid #d77878;
+            background: #482f2f;
         }
         #flow_block[state="warn"] {
-            border: 1px solid #d9b44a;
-            background: #3a3021;
+            border: 1px solid #e1c267;
+            background: #4a402f;
         }
         #flow_block[state="active"] {
-            border: 1px solid #d86b5d;
-            background: #3a2320;
+            border: 1px solid #e2897d;
+            background: #482f2c;
         }
         QGroupBox {
-            border: 1px solid #2a2f36;
+            border: 1px solid #3a414b;
             border-radius: 10px;
             margin-top: 6px;
             padding: 8px;
-            background: #21262d;
+            background: #303741;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
@@ -3704,37 +3828,37 @@ class SessionConsole(QWidget):
         QToolButton {
             border: none;
             font-weight: bold;
-            color: #cfd5dd;
+            color: #dbe1e8;
         }
         QPushButton {
-            background-color: #3a6ea5;
+            background-color: #4a7fb6;
             color: white;
             border: none;
             border-radius: 8px;
             padding: 4px 8px;
         }
         QPushButton:checked {
-            background-color: #2b567f;
+            background-color: #3b6a9a;
         }
         QPushButton:hover {
-            background-color: #4b7fb3;
+            background-color: #5b91c7;
         }
         QLineEdit, QSpinBox, QComboBox, QTextEdit {
-            border: 1px solid #2f353d;
+            border: 1px solid #454d58;
             border-radius: 6px;
             padding: 3px;
-            background: #1a1e24;
-            color: #e6e8eb;
-            selection-background-color: #3a6ea5;
+            background: #2a3039;
+            color: #eef1f4;
+            selection-background-color: #4a7fb6;
         }
         QLabel {
-            color: #cfd5dd;
+            color: #dbe1e8;
         }
         QScrollArea {
             border: none;
         }
         QCheckBox {
-            color: #cfd5dd;
+            color: #dbe1e8;
         }
         """)
 
