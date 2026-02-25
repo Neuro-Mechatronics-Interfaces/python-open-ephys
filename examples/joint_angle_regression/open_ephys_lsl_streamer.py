@@ -465,6 +465,8 @@ class OpenEphysLSLStreamer:
         adc = adc_arr.T  # (n_new, n_adc)
         n_samples = emg.shape[0]
         info["channels"] = n_emg
+        info["emg_shape"] = emg.shape  # (n_samples, n_emg)
+        info["adc_shape"] = adc.shape  # (n_samples, n_adc)
 
         if n_samples <= 0:
             return info
@@ -499,7 +501,8 @@ class OpenEphysLSLStreamer:
 
         self.total_emg += n_samples
         self.total_imu += n_samples
-        self.total_adc += n_samples
+        if n_adc > 0:
+            self.total_adc += n_samples
         self.last_chunk = n_samples
         if n_emg > 0:
             self.last_emg_rms = float(np.sqrt(np.mean(emg * emg)))
@@ -797,23 +800,22 @@ class StreamerWindow(QMainWindow):
 
         try:
             info = self.streamer.poll_once()
-            ch = info["channels"]
-            n_adc = info.get("n_adc", 0)
-            chunk = info["chunk"]
             fs_str = f"{self.streamer.detected_fs:.0f}" if self.streamer.detected_fs > 0 else "?"
             hdr = f"{self.streamer._header_fs:.0f}" if self.streamer._header_fs > 0 else "?"
             meas = f"{self.streamer._measured_fs}" if self.streamer._measured_fs > 0 else "?"
+            eshape = info.get("emg_shape", (0, 0))
+            ashape = info.get("adc_shape", (0, 0))
             self.emg_shape.setText(
-                f"EMG: {info['total_emg']:,} samples  |  chunk ({chunk}, {ch})  @ {fs_str} Hz"
+                f"EMG: {info['total_emg']:,} samples  |  chunk {eshape}  @ {fs_str} Hz"
             )
             self.adc_shape.setText(
-                f"ADC: {info.get('total_adc', 0):,} samples  |  chunk ({chunk}, {n_adc})"
-                if n_adc > 0 else "ADC: none"
+                f"ADC: {info.get('total_adc', 0):,} samples  |  chunk {ashape}"
+                if ashape[1] > 0 else "ADC: none"
             )
             self.rate.setText(
                 f"Rate: {info['rate_hz']:.1f} Hz  |  fs: header={hdr}  measured={meas}"
             )
-            if chunk > 0:
+            if info["chunk"] > 0:
                 self.emg_stats.setText(
                     f"EMG RMS: {info['emg_rms']:.3f}  |  \u03c3: {info['emg_std']:.3f}"
                 )
