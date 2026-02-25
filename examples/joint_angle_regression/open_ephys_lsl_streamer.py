@@ -151,7 +151,7 @@ class OpenEphysLSLStreamer:
         self.detected_fs = 0.0  # filled after connect
         self._header_fs = 0.0  # from ZMQ header field
         self._measured_fs = 0  # empirical throughput
-        self._prev_written = 0  # track ref-channel total_samples_written
+        self._prev_idx = 0  # track global_sample_index (per-channel)
 
     @staticmethod
     def _round_fs(raw: float) -> float:
@@ -174,7 +174,8 @@ class OpenEphysLSLStreamer:
         cross-validate the header-reported ``sample_rate``.
 
         Returns ``(n_channels, measured_fs)`` where *measured_fs* is
-        samples-per-second computed from ``total_samples_written``.
+        samples-per-second computed from ``global_sample_index`` (header-
+        based per-channel index, not the raw payload byte count).
         """
         import time as _t
 
@@ -183,9 +184,9 @@ class OpenEphysLSLStreamer:
         stable_since = start
         channels_stable = False
 
-        # snapshot sample counter at start
+        # snapshot the per-channel sample index at start
         with self.client._lock:
-            samples_t0 = int(self.client.total_samples_written)
+            idx_t0 = int(self.client.global_sample_index)
 
         while (_t.time() - start) < timeout:
             with self.client._lock:
@@ -197,8 +198,7 @@ class OpenEphysLSLStreamer:
                 channels_stable = True
                 # Keep looping a bit longer to accumulate a better fs estimate.
                 # We want at least 1 s of data total for a reliable rate.
-                min_end = start + 1.5
-                if _t.time() >= min_end:
+                if _t.time() >= start + 1.5:
                     break
             elif channels_stable:
                 if _t.time() >= start + 1.5:
@@ -207,8 +207,8 @@ class OpenEphysLSLStreamer:
 
         elapsed = max(_t.time() - start, 1e-6)
         with self.client._lock:
-            samples_t1 = int(self.client.total_samples_written)
-        measured_fs = (samples_t1 - samples_t0) / elapsed
+            idx_t1 = int(self.client.global_sample_index)
+        measured_fs = (idx_t1 - idx_t0) / elapsed
         return prev_count, measured_fs
 
     def start(self):
@@ -306,9 +306,9 @@ class OpenEphysLSLStreamer:
             except Exception:
                 self.imu_client = None
 
-        # Sync drain cursor to ref channel's total_samples_written
+        # Sync drain cursor to global_sample_index (per-channel header index)
         with self.client._lock:
-            self._prev_written = int(self.client.total_samples_written)
+            self._prev_idx = int(self.client.global_sample_index)
 
         self.running = True
         self.last_poll = _now()
@@ -355,12 +355,13 @@ class OpenEphysLSLStreamer:
         self.last_poll = now
         info["rate_hz"] = 1.0 / dt
 
-        # Use total_samples_written (incremented every ref-channel packet) as cursor.
-        # This is a monotonically increasing counter of how many samples the ref
-        # channel has written — reliable and independent of header-index math.
+        # Use global_sample_index (header-based per-channel index) as cursor.
+        # This tracks sample_num+num_samples from ZMQ headers and represents
+        # the true per-channel sample count, unlike total_samples_written which
+        # uses the raw payload size (may be inflated by multi-channel payloads).
         with self.client._lock:
-            total_w = int(self.client.total_samples_written)
-            n_new = total_w - self._prev_written
+            cur_idx = int(self.client.global_sample_index)
+            n_new = cur_idx - self._prev_idx
             if n_new <= 0:
                 return info
             # Cap to buffer length
@@ -382,7 +383,7 @@ class OpenEphysLSLStreamer:
                     start_idx = blen - take
                     for j in range(take):
                         emg_arr[i, n_new - take + j] = buf[start_idx + j]
-            self._prev_written = total_w
+            self._prev_idx = cur_idx
 
         # emg_arr: (channels, n_new) → transpose to (n_new, channels)
         emg = emg_arr.T
@@ -393,7 +394,7 @@ class OpenEphysLSLStreamer:
         if n_samples <= 0:
             return info
 
-        fs = float(self.client.fs) if float(self.client.fs) > 0 else self.expected_fs
+        fs = self.detected_fs if self.detected_fs > 0 else self.expected_fs
         ts_end = _now()
         ts = ts_end - (np.arange(n_samples, dtype=np.float64)[::-1] / fs)
 
