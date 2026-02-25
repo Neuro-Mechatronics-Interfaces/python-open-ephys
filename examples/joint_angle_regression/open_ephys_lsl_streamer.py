@@ -149,15 +149,43 @@ class OpenEphysLSLStreamer:
         self.last_chunk = 0
         self.last_error = ""
         self.detected_fs = 0.0  # filled after connect
+        self._header_fs = 0.0  # from ZMQ header field
+        self._measured_fs = 0  # empirical throughput
         self._prev_written = 0  # track ref-channel total_samples_written
 
+    @staticmethod
+    def _round_fs(raw: float) -> float:
+        """Round a measured fs to the nearest 'standard' rate."""
+        # Common DAQ rates
+        standard = [
+            1000, 1250, 1500, 2000, 2500, 3000, 3333, 4000, 5000,
+            6250, 8000, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000,
+        ]
+        best = min(standard, key=lambda s: abs(s - raw))
+        # Only snap if within 10 %
+        if abs(best - raw) / max(best, 1) < 0.10:
+            return float(best)
+        return round(raw)
+
     def _wait_for_channels(self, timeout=3.0):
-        """Poll seen_nums until the count stabilises for 0.5 s or *timeout* expires."""
+        """Poll seen_nums until the count stabilises for 0.5 s or *timeout* expires.
+
+        Also measures empirical sample throughput so the caller can
+        cross-validate the header-reported ``sample_rate``.
+
+        Returns ``(n_channels, measured_fs)`` where *measured_fs* is
+        samples-per-second computed from ``total_samples_written``.
+        """
         import time as _t
 
         start = _t.time()
         prev_count = 0
         stable_since = start
+
+        # snapshot sample counter at start
+        with self.client._lock:
+            samples_t0 = int(self.client.total_samples_written)
+
         while (_t.time() - start) < timeout:
             with self.client._lock:
                 n = len(self.client.seen_nums)
@@ -167,7 +195,12 @@ class OpenEphysLSLStreamer:
             elif (_t.time() - stable_since) >= 0.5:
                 break
             _t.sleep(0.05)
-        return prev_count
+
+        elapsed = max(_t.time() - start, 1e-6)
+        with self.client._lock:
+            samples_t1 = int(self.client.total_samples_written)
+        measured_fs = (samples_t1 - samples_t0) / elapsed
+        return prev_count, measured_fs
 
     def start(self):
         if self.running:
@@ -200,7 +233,7 @@ class OpenEphysLSLStreamer:
             )
 
         # Wait for channel count to stabilise (auto-detect)
-        n_detected = self._wait_for_channels(timeout=3.0)
+        n_detected, measured_fs = self._wait_for_channels(timeout=3.0)
 
         with self.client._lock:
             detected = sorted(self.client.seen_nums)
@@ -215,14 +248,28 @@ class OpenEphysLSLStreamer:
         ch_idx = detected[: self.emg_channels]
         self.client.set_channel_index(ch_idx)
 
-        # Infer sampling rate from the stream (client.fs is updated from ZMQ headers)
-        client_fs = float(self.client.fs)
-        if client_fs > 0 and (self.expected_fs <= 0 or self.expected_fs == 5000.0):
-            self.detected_fs = client_fs
-        elif self.expected_fs > 0:
+        # ---- Infer sampling rate ----
+        # Three possible sources (best → worst):
+        #   1. User-supplied expected_fs  (if > 0)
+        #   2. Empirical throughput measured during channel stabilisation
+        #   3. Header-reported sample_rate (client.fs)
+        # The empirical rate is the most trustworthy when available because
+        # it reflects actual data throughput rather than a header field that
+        # some plugins may set incorrectly.
+        header_fs = float(self.client.fs)
+        self._header_fs = header_fs
+        self._measured_fs = round(measured_fs)
+
+        if self.expected_fs > 0:
+            # User explicitly chose a rate – honour it.
             self.detected_fs = self.expected_fs
+        elif measured_fs > 100:
+            # Round to nearest "nice" rate (multiple of 250 or 1000)
+            self.detected_fs = self._round_fs(measured_fs)
+        elif header_fs > 0:
+            self.detected_fs = header_fs
         else:
-            self.detected_fs = client_fs if client_fs > 0 else 2000.0
+            self.detected_fs = 2000.0
         fs = self.detected_fs
         self.emg_outlet, self.imu_outlet = build_outlets(
             self.emg_stream_name, self.imu_stream_name, fs, self.emg_channels
@@ -632,8 +679,13 @@ class StreamerWindow(QMainWindow):
             info = self.streamer.poll_once()
             ch = info["channels"]
             fs_str = f"{self.streamer.detected_fs:.0f}" if self.streamer.detected_fs > 0 else "?"
+            hdr = f"{self.streamer._header_fs:.0f}" if self.streamer._header_fs > 0 else "?"
+            meas = f"{self.streamer._measured_fs}" if self.streamer._measured_fs > 0 else "?"
             self.samples.setText(
                 f"Samples: {info['total_emg']:,}  |  chunk ({ch}ch, {info['chunk']})  @ {fs_str} Hz"
+            )
+            self.rate.setText(
+                f"Rate: {info['rate_hz']:.1f} Hz  |  fs: header={hdr}  measured={meas}"
             )
             if info["chunk"] > 0:
                 self.emg_stats.setText(
@@ -642,7 +694,6 @@ class StreamerWindow(QMainWindow):
                 self.imu_stats.setText(
                     f"IMU \u03c3: {info['imu_std']:.3f}  |  Mag \u03c3: {info['mag_std']:.3f}"
                 )
-            self.rate.setText(f"Rate: {info['rate_hz']:.1f} Hz")
         except Exception as exc:
             self.status.setText(f"Error: {exc}")
             self.status.setStyleSheet(
@@ -674,6 +725,7 @@ def run_cli(args):
     print(
         f"Streaming LSL: EMG='{args.emg_stream_name}', IMU='{args.imu_stream_name}'"
         f" | {streamer.emg_channels}ch @ {streamer.detected_fs:.0f} Hz"
+        f"  (header={streamer._header_fs:.0f}, measured={streamer._measured_fs})"
     )
     try:
         while True:
