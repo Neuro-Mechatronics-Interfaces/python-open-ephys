@@ -655,15 +655,17 @@ class StreamerWindow(QMainWindow):
 
         self.status = QLabel("Disconnected")
         self.status.setStyleSheet("color: #ff6666; font-weight: bold; font-size: 14px;")
-        self.samples = QLabel("Samples: 0")
         self.ch_info = QLabel("Channels: EMG=0  ADC=0")
+        self.emg_shape = QLabel("EMG: —")
+        self.adc_shape = QLabel("ADC: —")
         self.emg_stats = QLabel("EMG RMS: N/A  |  \u03c3: N/A")
         self.imu_stats = QLabel("IMU \u03c3: N/A  |  Mag \u03c3: N/A")
         self.rate = QLabel("Rate: N/A")
 
         sl.addWidget(self.status)
         sl.addWidget(self.ch_info)
-        sl.addWidget(self.samples)
+        sl.addWidget(self.emg_shape)
+        sl.addWidget(self.adc_shape)
         sl.addWidget(self.emg_stats)
         sl.addWidget(self.imu_stats)
         sl.addWidget(self.rate)
@@ -797,17 +799,21 @@ class StreamerWindow(QMainWindow):
             info = self.streamer.poll_once()
             ch = info["channels"]
             n_adc = info.get("n_adc", 0)
+            chunk = info["chunk"]
             fs_str = f"{self.streamer.detected_fs:.0f}" if self.streamer.detected_fs > 0 else "?"
             hdr = f"{self.streamer._header_fs:.0f}" if self.streamer._header_fs > 0 else "?"
             meas = f"{self.streamer._measured_fs}" if self.streamer._measured_fs > 0 else "?"
-            self.samples.setText(
-                f"EMG: {info['total_emg']:,}  |  ADC: {info.get('total_adc', 0):,}  |  "
-                f"chunk ({ch}+{n_adc}ch, {info['chunk']})  @ {fs_str} Hz"
+            self.emg_shape.setText(
+                f"EMG: {info['total_emg']:,} samples  |  chunk ({chunk}, {ch})  @ {fs_str} Hz"
+            )
+            self.adc_shape.setText(
+                f"ADC: {info.get('total_adc', 0):,} samples  |  chunk ({chunk}, {n_adc})"
+                if n_adc > 0 else "ADC: none"
             )
             self.rate.setText(
                 f"Rate: {info['rate_hz']:.1f} Hz  |  fs: header={hdr}  measured={meas}"
             )
-            if info["chunk"] > 0:
+            if chunk > 0:
                 self.emg_stats.setText(
                     f"EMG RMS: {info['emg_rms']:.3f}  |  \u03c3: {info['emg_std']:.3f}"
                 )
