@@ -1260,7 +1260,9 @@ class SessionConsole(QWidget):
             if self.target_angle_combo.itemData(i) == self.target_spec:
                 self.target_angle_combo.setCurrentIndex(i)
                 break
-        self.target_angle_combo.currentIndexChanged.connect(self._on_target_spec_changed)
+        self.target_angle_combo.currentIndexChanged.connect(
+            self._on_target_spec_changed
+        )
 
         row = 0
         layout.addWidget(QLabel("Output"), row, 0)
@@ -2039,9 +2041,7 @@ class SessionConsole(QWidget):
             if now - self.last_marker_inlet_resolve >= self.inlet_resolve_interval_s:
                 self.last_marker_inlet_resolve = now
                 try:
-                    streams = resolve_byprop(
-                        "name", name, timeout=0.01
-                    )
+                    streams = resolve_byprop("name", name, timeout=0.01)
                     if streams:
                         self.marker_inlet = StreamInlet(streams[0])
                 except Exception:
@@ -2066,9 +2066,7 @@ class SessionConsole(QWidget):
                 if len(self.marker_buffer) > 2000:
                     self.marker_buffer = self.marker_buffer[-2000:]
         # Drive status label from data flow
-        marker_age = (
-            _clock() - self.last_marker_seen if self.last_marker_seen else None
-        )
+        marker_age = _clock() - self.last_marker_seen if self.last_marker_seen else None
         if marker_age is not None and marker_age < 2.0:
             self.marker_status.setText("\u25cf Connected")
             self.marker_status.setStyleSheet("color: #44ff44; font-weight: bold;")
@@ -2199,7 +2197,7 @@ class SessionConsole(QWidget):
                 if delta is not None
                 else ""
             )
-        
+
         # Keep sync yellow until all inputs are green
         if not emg_ok or not (hand_ok and not hand_stale):
             sync_state = "warn"
@@ -2340,9 +2338,7 @@ class SessionConsole(QWidget):
         spec = self.target_angle_combo.itemData(idx)
         if spec:
             self.target_spec = spec
-            self.target_keys = (
-                get_target_keys(spec) if get_target_keys else ANGLE_KEYS
-            )
+            self.target_keys = get_target_keys(spec) if get_target_keys else ANGLE_KEYS
             self.compare_joints = list(self.target_keys)
             self.compare_joints_idx = []
             n = len(self.target_keys)

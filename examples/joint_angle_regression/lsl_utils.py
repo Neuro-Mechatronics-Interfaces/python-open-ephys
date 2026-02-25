@@ -1,10 +1,11 @@
-import time
 import threading
+import time
 from collections import deque
 
 _LSL_IMPORT_ERROR = None
 try:
-    from pylsl import StreamInlet, StreamInfo, StreamOutlet, local_clock
+    from pylsl import StreamInfo, StreamInlet, StreamOutlet, local_clock
+
     # pylsl API changed: resolve_stream was renamed in some versions
     try:
         from pylsl import resolve_stream as _resolve_stream
@@ -34,11 +35,20 @@ except Exception as exc:
 
 
 ANGLE_KEYS = [
-    "thumb_cmc_mcp", "thumb_ip",
-    "index_mcp", "index_pip", "index_dip",
-    "middle_mcp", "middle_pip", "middle_dip",
-    "ring_mcp", "ring_pip", "ring_dip",
-    "pinky_mcp", "pinky_pip", "pinky_dip",
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip",
 ]
 
 TARGET_SPECS = {
@@ -60,7 +70,9 @@ def resolve_lsl_stream(name=None, stream_type=None, timeout=5.0):
     if not HAS_LSL:
         raise RuntimeError(f"pylsl import failed: {_LSL_IMPORT_ERROR!r}")
     if resolve_stream is None:
-        raise RuntimeError("pylsl resolve function not available (resolve_stream/resolve_byprop missing).")
+        raise RuntimeError(
+            "pylsl resolve function not available (resolve_stream/resolve_byprop missing)."
+        )
     if name:
         streams = resolve_stream("name", name, timeout=timeout)
     elif stream_type:
