@@ -111,7 +111,7 @@ class OpenEphysLSLStreamer:
         self,
         host="127.0.0.1",
         port=5556,
-        expected_fs=5000.0,
+        expected_fs=0.0,
         emg_channels=0,
         emg_stream_name="OpenEphys_EMG",
         imu_stream_name="OpenEphys_IMU",
@@ -148,6 +148,7 @@ class OpenEphysLSLStreamer:
         self.last_mag_std = 0.0
         self.last_chunk = 0
         self.last_error = ""
+        self.detected_fs = 0.0  # filled after connect
         self._prev_written = 0  # track ref-channel total_samples_written
 
     def _wait_for_channels(self, timeout=3.0):
@@ -214,7 +215,15 @@ class OpenEphysLSLStreamer:
         ch_idx = detected[: self.emg_channels]
         self.client.set_channel_index(ch_idx)
 
-        fs = float(self.client.fs) if float(self.client.fs) > 0 else self.expected_fs
+        # Infer sampling rate from the stream (client.fs is updated from ZMQ headers)
+        client_fs = float(self.client.fs)
+        if client_fs > 0 and (self.expected_fs <= 0 or self.expected_fs == 5000.0):
+            self.detected_fs = client_fs
+        elif self.expected_fs > 0:
+            self.detected_fs = self.expected_fs
+        else:
+            self.detected_fs = client_fs if client_fs > 0 else 2000.0
+        fs = self.detected_fs
         self.emg_outlet, self.imu_outlet = build_outlets(
             self.emg_stream_name, self.imu_stream_name, fs, self.emg_channels
         )
@@ -461,7 +470,10 @@ class StreamerWindow(QMainWindow):
         cg.addWidget(self.ch_edit, 1, 1)
 
         cg.addWidget(QLabel("Fs (Hz)"), 1, 2)
-        self.fs_edit = QLineEdit(str(int(self.args.fs)))
+        self.fs_edit = QSpinBox()
+        self.fs_edit.setRange(0, 100000)
+        self.fs_edit.setSpecialValueText("Auto")
+        self.fs_edit.setValue(int(self.args.fs))
         self.fs_edit.setFixedWidth(80)
         cg.addWidget(self.fs_edit, 1, 3)
 
@@ -531,10 +543,7 @@ class StreamerWindow(QMainWindow):
         host = self.host_edit.text().strip() or self.args.host
         port = self.port_edit.value()
         channels = self.ch_edit.value()
-        try:
-            fs = float(self.fs_edit.text().strip())
-        except ValueError:
-            fs = self.args.fs
+        fs = float(self.fs_edit.value())
         emg_name = self.emg_name.text().strip() or self.args.emg_stream_name
         imu_name = self.imu_name.text().strip() or self.args.imu_stream_name
         return OpenEphysLSLStreamer(
@@ -577,8 +586,10 @@ class StreamerWindow(QMainWindow):
 
         self.status.setText("Streaming")
         self.status.setStyleSheet("color: #44ff44; font-weight: bold; font-size: 14px;")
-        # Update channel count from auto-detection
+        # Update channel count and fs from auto-detection
         self.ch_edit.setValue(self.streamer.emg_channels)
+        if self.streamer.detected_fs > 0:
+            self.fs_edit.setValue(int(self.streamer.detected_fs))
         self.reminder.hide()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
@@ -620,8 +631,9 @@ class StreamerWindow(QMainWindow):
         try:
             info = self.streamer.poll_once()
             ch = info["channels"]
+            fs_str = f"{self.streamer.detected_fs:.0f}" if self.streamer.detected_fs > 0 else "?"
             self.samples.setText(
-                f"Samples: {info['total_emg']:,}  |  chunk ({ch}, {info['chunk']})"
+                f"Samples: {info['total_emg']:,}  |  chunk ({ch}ch, {info['chunk']})  @ {fs_str} Hz"
             )
             if info["chunk"] > 0:
                 self.emg_stats.setText(
@@ -659,7 +671,10 @@ def run_cli(args):
         imu_transport=args.imu_transport,
     )
     streamer.start()
-    print(f"Streaming LSL: EMG='{args.emg_stream_name}', IMU='{args.imu_stream_name}'")
+    print(
+        f"Streaming LSL: EMG='{args.emg_stream_name}', IMU='{args.imu_stream_name}'"
+        f" | {streamer.emg_channels}ch @ {streamer.detected_fs:.0f} Hz"
+    )
     try:
         while True:
             info = streamer.poll_once()
@@ -682,7 +697,10 @@ def build_arg_parser():
     p.add_argument("--host", default="127.0.0.1", help="Open Ephys ZMQ host")
     p.add_argument("--port", type=int, default=5556, help="Open Ephys ZMQ data port")
     p.add_argument(
-        "--fs", type=float, default=5000.0, help="Expected EMG sampling rate"
+        "--fs",
+        type=float,
+        default=0.0,
+        help="Sampling rate in Hz (0 = auto-detect from stream)",
     )
     p.add_argument(
         "--channels", type=int, default=0, help="EMG channel count (0 = auto-detect)"
