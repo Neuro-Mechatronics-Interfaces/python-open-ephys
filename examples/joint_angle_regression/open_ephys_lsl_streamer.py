@@ -181,6 +181,7 @@ class OpenEphysLSLStreamer:
         start = _t.time()
         prev_count = 0
         stable_since = start
+        channels_stable = False
 
         # snapshot sample counter at start
         with self.client._lock:
@@ -192,8 +193,16 @@ class OpenEphysLSLStreamer:
             if n != prev_count:
                 prev_count = n
                 stable_since = _t.time()
-            elif (_t.time() - stable_since) >= 0.5:
-                break
+            elif not channels_stable and (_t.time() - stable_since) >= 0.5:
+                channels_stable = True
+                # Keep looping a bit longer to accumulate a better fs estimate.
+                # We want at least 1 s of data total for a reliable rate.
+                min_end = start + 1.5
+                if _t.time() >= min_end:
+                    break
+            elif channels_stable:
+                if _t.time() >= start + 1.5:
+                    break
             _t.sleep(0.05)
 
         elapsed = max(_t.time() - start, 1e-6)
@@ -255,7 +264,8 @@ class OpenEphysLSLStreamer:
         #   3. Header-reported sample_rate (client.fs)
         # The empirical rate is the most trustworthy when available because
         # it reflects actual data throughput rather than a header field that
-        # some plugins may set incorrectly.
+        # some plugins may set incorrectly (e.g. reporting the hardware Intan
+        # chip rate of 30/40 kHz instead of the software-decimated rate).
         header_fs = float(self.client.fs)
         self._header_fs = header_fs
         self._measured_fs = round(measured_fs)
@@ -265,7 +275,16 @@ class OpenEphysLSLStreamer:
             self.detected_fs = self.expected_fs
         elif measured_fs > 100:
             # Round to nearest "nice" rate (multiple of 250 or 1000)
-            self.detected_fs = self._round_fs(measured_fs)
+            rounded = self._round_fs(measured_fs)
+            self.detected_fs = rounded
+            # Warn if header claims something very different
+            if header_fs > 0 and abs(header_fs - rounded) / max(header_fs, 1) > 0.15:
+                import warnings
+                warnings.warn(
+                    f"ZMQ header reports sample_rate={header_fs:.0f} Hz but "
+                    f"empirical throughput is ~{rounded:.0f} Hz. "
+                    f"Using measured rate. Override with --fs if needed."
+                )
         elif header_fs > 0:
             self.detected_fs = header_fs
         else:
