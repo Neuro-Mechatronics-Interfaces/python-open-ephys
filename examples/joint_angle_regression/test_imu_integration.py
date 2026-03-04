@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test script to verify IMU integration in new_session_gui.py"""
+"""Test script to verify IMU integration in session_gui.py"""
 
 import sys
 from pathlib import Path
@@ -26,18 +26,18 @@ except Exception as e:
 # Test GUI imports (without launching)
 try:
     # Import just the OpenEphysMonitor class by parsing
-    gui_file = Path(__file__).parent / "new_session_gui.py"
+    gui_file = Path(__file__).parent / "session_gui.py"
 
     # Just verify the file can be compiled
     with open(gui_file, "r", encoding="utf-8") as f:
         code = f.read()
     compile(code, str(gui_file), "exec")
-    print("✓ new_session_gui.py compiles successfully")
+    print("✓ session_gui.py compiles successfully")
 except SyntaxError as e:
-    print(f"✗ Syntax error in new_session_gui.py: {e}")
+    print(f"✗ Syntax error in session_gui.py: {e}")
     sys.exit(1)
 except Exception as e:
-    print(f"✗ Error checking new_session_gui.py: {e}")
+    print(f"✗ Error checking session_gui.py: {e}")
     sys.exit(1)
 
 # Test OpenEphysMonitor initialization
@@ -46,9 +46,7 @@ try:
     # Import the module
     spec = __import__(
         "importlib.util", fromlist=["spec_from_file_location"]
-    ).spec_from_file_location(
-        "new_session_gui", Path(__file__).parent / "new_session_gui.py"
-    )
+    ).spec_from_file_location("session_gui", Path(__file__).parent / "session_gui.py")
     gui_module = __import__(
         "importlib.util", fromlist=["module_from_spec"]
     ).module_from_spec(spec)
@@ -73,6 +71,6 @@ except Exception as e:
 print("\n📋 Next steps:")
 print("  1. Ensure Open Ephys GUI is running with ZMQ Interface plugin")
 print("  2. If using IMU, ensure Sleeve IMU is powered and connected to network")
-print("  3. Launch: python new_session_gui.py")
+print("  3. Launch: python session_gui.py")
 print("  4. Enable 'Enable Sleeve IMU' checkbox if needed")
 print("  5. Click 'Connect' to start EMG streaming")

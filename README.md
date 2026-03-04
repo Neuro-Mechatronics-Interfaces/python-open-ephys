@@ -64,6 +64,30 @@ fs = sess['sample_rate']
 filtered = filter_emg(data, filter_type='bandpass', lowcut=10, highcut=500, fs=fs)
 ```
 
+### File Conversion (Open Ephys/XDF -> MAT/NPZ)
+
+You can convert recording sessions to `.mat` or `.npz` format using the interactive CLI tool:
+
+```bash
+# Run the interactive wizard
+python examples/read_files/convert_open_ephys_session.py
+
+# Or use command-line arguments
+python examples/read_files/convert_open_ephys_session.py --input path/to/session.oebin --format mat
+```
+
+Or programmatically:
+
+```python
+from pyoephys.io import convert_session_api
+
+convert_session_api(
+    input_path='path/to/session.oebin',
+    output_path='converted_data.mat',
+    format='mat'
+)
+```
+
 ### Real-time ZMQ Streaming
 
 ```bash

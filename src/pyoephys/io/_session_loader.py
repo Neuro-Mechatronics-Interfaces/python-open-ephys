@@ -14,7 +14,7 @@ from ._file_utils import find_oebin_files
 @dataclass
 class SessionData:
     amplifier_data: np.ndarray  # shape (C, S), float32 (microvolts by default)
-    t_amplifier: np.ndarray     # shape (S,), float64 seconds
+    t_amplifier: np.ndarray  # shape (S,), float64 seconds
     sample_rate: float
     channel_names: List[str]
 
@@ -46,7 +46,9 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
         try:
             import pandas as pd
         except ImportError:
-            raise ImportError("pandas is required to load CSV files: pip install pandas")
+            raise ImportError(
+                "pandas is required to load CSV files: pip install pandas"
+            )
         df = pd.read_csv(p)
         if "timestamp" in df.columns:
             t = df["timestamp"].to_numpy(dtype=np.float64)
@@ -67,6 +69,10 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
         fs = float(z["fs_hz"])
         ch = [f"ch{i}" for i in range(y.shape[0])]
         return SessionData(y, t, fs, ch).__dict__
+
+    # Case 1.5: XDF
+    if p.is_file() and p.suffix.lower() == ".xdf":
+        return load_xdf_session(p)
 
     # Case 2: 'simple' folder with pre-extracted arrays
     if p.is_dir():
@@ -94,10 +100,23 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     if stream is None:
         raise RuntimeError("No continuous stream found in .oebin metadata.")
 
-    fs = float(stream.get("sample_rate") or stream.get("sampleRate") or stream.get("rate") or meta.get("sample_rate", 0.0))
+    fs = float(
+        stream.get("sample_rate")
+        or stream.get("sampleRate")
+        or stream.get("rate")
+        or meta.get("sample_rate", 0.0)
+    )
     channels_meta = stream.get("channels") or stream.get("source_channels") or []
-    channel_names = [c.get("channel_name") or c.get("name") or f"ch{i}" for i, c in enumerate(channels_meta)]
-    n_channels = int(stream.get("num_channels") or stream.get("channel_count") or len(channel_names) or 0)
+    channel_names = [
+        c.get("channel_name") or c.get("name") or f"ch{i}"
+        for i, c in enumerate(channels_meta)
+    ]
+    n_channels = int(
+        stream.get("num_channels")
+        or stream.get("channel_count")
+        or len(channel_names)
+        or 0
+    )
     if n_channels == 0:
         n_channels = len(channel_names)
     if n_channels == 0:
@@ -116,7 +135,13 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     # Read int16 interleaved -> (S, C) -> transpose to (C, S)
     raw = np.fromfile(dat, dtype="<i2")
     if raw.size % n_channels != 0:
-        raise ValueError(f"continuous.dat size {raw.size} not divisible by n_channels={n_channels}")
+        remainder = raw.size % n_channels
+        print(
+            f"Warning: continuous.dat size {raw.size} not divisible by n_channels={n_channels}. "
+            f"Truncating last {remainder} items."
+        )
+        raw = raw[:-remainder]
+
     samples = raw.size // n_channels
     y_i16 = raw.reshape(samples, n_channels)
     # Scale to microvolts using bitVolts if available, else 0.195 µV/count
@@ -125,9 +150,23 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     y = y.T  # (C, S)
 
     if have_ts:
-        t = np.load(ts).astype(np.float64)
-        if t.ndim != 1 or t.size != samples:
-            raise ValueError("timestamps.npy has wrong shape.")
+        try:
+            t = np.load(ts).astype(np.float64)
+            # Verify length align
+            if t.size > samples:
+                print(
+                    f"Warning: timestamps length ({t.size}) > samples ({samples}). Truncating timestamps."
+                )
+                t = t[:samples]
+
+            if t.ndim != 1 or t.size != samples:
+                print(
+                    f"Warning: timestamps.npy has wrong shape/len ({t.size} vs {samples}). Synthesizing timestamps."
+                )
+                t = np.arange(samples, dtype=np.float64) / fs
+        except Exception as e:
+            print(f"Warning: Failed to load timestamps.npy: {e}. Synthesizing.")
+            t = np.arange(samples, dtype=np.float64) / fs
     else:
         # Synthesize strictly monotonic timestamps
         t0 = 0.0
@@ -137,7 +176,165 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     if len(channel_names) != n_channels:
         channel_names = [f"ch{i}" for i in range(n_channels)]
 
-    return SessionData(y, t, fs, channel_names).__dict__
+    # Load events (TTL)
+    events = _load_open_ephys_events(root)
+
+    return {
+        "amplifier_data": y,
+        "t_amplifier": t,
+        "sample_rate": fs,
+        "channel_names": channel_names,
+        "events": events,
+    }
+
+
+def _load_open_ephys_events(root: Path) -> Dict[str, Any]:
+    """
+    Search for and load TTL events from the Open Ephys events directory.
+    Returns a dict with 'timestamps', 'channels', 'states'.
+    """
+    # Typical path: events/*/TTL/timestamps.npy
+    # We search specifically for a 'TTL' folder
+    ttl_dirs = list(root.rglob("TTL"))
+
+    if not ttl_dirs:
+        # Fallback: Look for 'events' folder with standard files
+        # Sometimes events are directly in events/
+        events_dir = root / "events"
+        if events_dir.exists() and (events_dir / "timestamps.npy").exists():
+            ttl_dirs = [events_dir]
+        else:
+            return {}
+
+    # Take the first TTL folder found (usually only one per recording)
+    ttl_dir = ttl_dirs[0]
+
+    ts_file = ttl_dir / "timestamps.npy"
+    states_file = ttl_dir / "channel_states.npy"
+    ch_file = ttl_dir / "channels.npy"
+
+    events = {}
+
+    if ts_file.exists():
+        events["timestamps"] = np.load(ts_file).astype(np.float64)
+
+        if states_file.exists():
+            st = np.load(states_file)
+            events["states"] = st
+            # In some versions, channel info is encoded in states or separate
+            if ch_file.exists():
+                events["channels"] = np.load(ch_file)
+            else:
+                events["channels"] = np.zeros_like(st)
+
+        elif ch_file.exists():
+            events["channels"] = np.load(ch_file)
+            # Look for states.npy?
+            st_file_alt = ttl_dir / "states.npy"
+            if st_file_alt.exists():
+                events["states"] = np.load(st_file_alt)
+            else:
+                events["states"] = np.ones_like(events["channels"])
+
+    return events
+
+
+def load_xdf_session(path: str | os.PathLike) -> Dict[str, Any]:
+    """
+    Load an XDF file (LabRecorder) into the session dictionary format.
+
+    Requires 'pyxdf' installed.
+    Searches for a stream with type="EMG" (or "EEG", "Bio", etc. logic).
+    """
+    try:
+        import pyxdf
+    except ImportError:
+        raise ImportError(
+            "pyxdf is required to load .xdf files. Install with 'pip install pyxdf'"
+        )
+
+    streams, header = pyxdf.load_xdf(str(path))
+
+    # Heuristic to find the 'main' amplifier stream
+    target_stream = None
+
+    # Priority 1: Type is EMG
+    for s in streams:
+        if s["info"]["type"][0].lower() == "emg":
+            target_stream = s
+            break
+
+    # Priority 2: Name contains "OpenEphys" or "TMSi"
+    if target_stream is None:
+        for s in streams:
+            name = s["info"]["name"][0]
+            if "OpenEphys" in name or "TMSi" in name:
+                target_stream = s
+                break
+
+    # Priority 3: Fallback to first stream if only one exists (and isn't Markers)
+    if target_stream is None:
+        candidates = [s for s in streams if s["info"]["type"][0].lower() != "markers"]
+        if len(candidates) == 1:
+            target_stream = candidates[0]
+
+    if target_stream is None:
+        raise ValueError(
+            f"Could not automatically identify an EMG/Amplifier stream in {path}. Found types: {[s['info']['type'][0] for s in streams]}"
+        )
+
+    # Extract data
+    # XDF time_series shape is (n_samples, n_channels)
+    # We want (n_channels, n_samples)
+    y = target_stream["time_series"].T.astype(np.float32)
+    t = np.array(target_stream["time_stamps"], dtype=np.float64)
+
+    # Try to get nominal fs
+    NominalSamplingRate = float(target_stream["info"]["nominal_srate"][0])
+    fs = NominalSamplingRate if NominalSamplingRate > 0 else 2000.0  # Fallback
+
+    # Channel Names
+    try:
+        # info -> desc -> channels -> channel -> label
+        ch_list = target_stream["info"]["desc"][0]["channels"][0]["channel"]
+        channel_names = [ch["label"][0] for ch in ch_list]
+    except (KeyError, IndexError):
+        channel_names = [f"ch{i}" for i in range(y.shape[0])]
+
+    # Extract Events (Markers)
+    events = {}
+    for s in streams:
+        if s["info"]["type"][0].lower() == "markers":
+            # XDF marker streams usually have strings in time_series
+            mrk_ts = np.array(s["time_stamps"], dtype=np.float64)
+            mrk_dat = s["time_series"]  # list of lists of strings usually
+
+            # Flatten if necessary
+            if isinstance(mrk_dat, list):
+                if len(mrk_dat) > 0 and isinstance(mrk_dat[0], list):
+                    mrk_dat = [
+                        item[0] for item in mrk_dat
+                    ]  # Flatten nested single-element lists
+                mrk_dat = np.array(mrk_dat)
+
+            # Assign to events dict. If multiple marker streams, maybe dict of dicts?
+            # For simplicity, we assume one main marker stream or combine them
+            # Let's use the stream name as the key if we have multiple
+            s_name = s["info"]["name"][0].replace(" ", "_").replace("-", "_")
+            events[s_name] = {"timestamps": mrk_ts, "data": mrk_dat}
+
+            # If this is the main "Markers" stream, also map to generic keys
+            if "Markers" in s_name or len(events) == 1:
+                events["timestamps"] = mrk_ts
+                events["data"] = mrk_dat
+
+    return {
+        "amplifier_data": y,
+        "t_amplifier": t,
+        "sample_rate": fs,
+        "channel_names": channel_names,
+        "events": events,
+    }
 
 
 def _load_oebin_meta(oebin_path: Path) -> dict:
@@ -155,6 +352,7 @@ def _pick_continuous_stream(meta: dict) -> Optional[dict]:
       - meta["recordings"][0]["streams"]["continuous"][0]
       - meta["streams"]["continuous"][0]
     """
+
     def _listify(x):
         if isinstance(x, list):
             return x
@@ -186,7 +384,9 @@ def _find_first(root: Path, filename: str) -> Optional[Path]:
     return None
 
 
-def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0.195) -> np.ndarray:
+def _extract_bitvolts(
+    channels_meta: List[dict], default_uv_per_count: float = 0.195
+) -> np.ndarray:
     uv = []
     for ch in channels_meta:
         bv = ch.get("bit_volts") or ch.get("bitVolts") or None
@@ -196,9 +396,9 @@ def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0
             # bit_volts is in µV/count when units=="uV", otherwise assume V/count
             units = (ch.get("units") or "").strip().lower()
             if units in ("uv", "µv", "microvolts"):
-                uv.append(float(bv))          # already µV/count
+                uv.append(float(bv))  # already µV/count
             else:
-                uv.append(float(bv) * 1e6)   # convert V/count → µV/count
+                uv.append(float(bv) * 1e6)  # convert V/count → µV/count
     if not uv:
         return np.full((1,), default_uv_per_count, dtype=np.float32)
     return np.asarray(uv, dtype=np.float32)

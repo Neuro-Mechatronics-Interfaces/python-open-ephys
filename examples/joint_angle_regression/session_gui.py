@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import pickle
+import re
+import socket
 import sys
 import time
 from datetime import datetime
@@ -44,13 +46,22 @@ KerasFeatureExtractor = None
 PyTorchFeatureExtractor = None
 
 try:
-    from pylsl import StreamInlet, local_clock, resolve_byprop, resolve_streams
+    from pylsl import (
+        StreamInfo,
+        StreamInlet,
+        StreamOutlet,
+        local_clock,
+        resolve_byprop,
+        resolve_streams,
+    )
 
     HAS_LSL = True
 except Exception:
+    StreamInfo = None
     resolve_byprop = None
     resolve_streams = None
     StreamInlet = None
+    StreamOutlet = None
     local_clock = None
     HAS_LSL = False
 
@@ -87,6 +98,33 @@ def _clock():
     if local_clock is not None:
         return local_clock()
     return time.time()
+
+
+def _cnn_custom_objects():
+    try:
+        import tensorflow as tf
+        from tensorflow import keras
+    except Exception:
+        return {}
+
+    class SinusoidalPositionalEncoding(keras.layers.Layer):
+        def call(self, x):
+            length = tf.shape(x)[1]
+            dim = tf.shape(x)[2]
+            pos = tf.cast(tf.range(length)[:, None], tf.float32)
+            i = tf.cast(tf.range(dim)[None, :], tf.float32)
+            angle_rates = 1.0 / tf.pow(
+                10000.0, (2.0 * tf.floor(i / 2.0)) / tf.cast(dim, tf.float32)
+            )
+            angle_rads = pos * angle_rates
+            sin_terms = tf.sin(angle_rads[:, 0::2])
+            cos_terms = tf.cos(angle_rads[:, 1::2])
+            pe = tf.reshape(tf.stack([sin_terms, cos_terms], axis=-1), (length, -1))[
+                :, :dim
+            ]
+            return x + pe[None, :, :]
+
+    return {"SinusoidalPositionalEncoding": SinusoidalPositionalEncoding}
 
 
 # print("GUI python:", sys.executable)
@@ -702,6 +740,9 @@ class SessionConsole(QWidget):
         self.record_window_ts = []
         self.record_marker_labels = []
         self.record_imu_windows = []
+        self.record_landmark_xyz_windows = []
+        self.record_landmark_valid_count = 0
+        self.last_angle_landmark_xyz = None
         self.record_skip_no_angle = 0
         self.record_skip_nan_angle = 0
         self.record_skip_old_angle = 0
@@ -713,7 +754,10 @@ class SessionConsole(QWidget):
         self.compare_active = False
         self.compare_extractor = None
         self.compare_regressor = None
-        self.compare_scaler = None
+        self.compare_model_kind = "feature_regressor"
+        self.compare_use_imu_model = False
+        self.compare_scaler_model = None
+        self.compare_scaler_path_input = None
         self.compare_emg_buf = np.zeros((0, 8), dtype=np.float32)
         self.compare_ts_buf = np.zeros((0,), dtype=np.float64)
         self.compare_imu_buf = np.zeros((0, 9), dtype=np.float32)
@@ -725,9 +769,15 @@ class SessionConsole(QWidget):
         )
         self.compare_smooth_ms = 150.0
         self.compare_pred_history = []
+        self.compare_pred_lsl_enabled = False
+        self.compare_pred_stream_name = "PredictedJointAngles"
+        self.compare_pred_stream_type = "PredictedAngles"
+        self.compare_pred_outlet = None
         self.compare_emg_transform = "log1p"
         self.compare_feature_mode = "bandpower_stats"
+        self.compare_emd_max_imfs = 3
         self.compare_target_scaler = None
+        self.compare_personalization = None
         self.emg_transform = "log1p"
         self.emg_feature_mode = "bandpower_stats"
         self.angle_scaler_mode = "minmax"
@@ -1215,21 +1265,28 @@ class SessionConsole(QWidget):
         section = CollapsibleSection("Task Prompter", content, default_open=False)
         return section
 
+    def _on_labrecorder_toggled(self, checked):
+        # Disable internal recording output if using LabRecorder
+        if hasattr(self, "record_out"):
+            self.record_out.setEnabled(not checked)
+        if hasattr(self, "btn_record_out"):
+            self.btn_record_out.setEnabled(not checked)
+
     def _build_record_panel(self):
         content = QWidget()
         layout = QGridLayout(content)
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(6)
 
-        default_out = self._next_session_path()
+        default_out = Path(__file__).parent / "data" / "session.npz"
         self.record_out = QLineEdit(str(default_out))
         out_row = QHBoxLayout()
         out_row.addWidget(self.record_out)
-        btn_out = QPushButton("Browse")
-        btn_out.clicked.connect(
+        self.btn_record_out = QPushButton("Browse")
+        self.btn_record_out.clicked.connect(
             lambda: self._pick_save(self.record_out, "Save recording")
         )
-        out_row.addWidget(btn_out)
+        out_row.addWidget(self.btn_record_out)
         self.record_duration_spin = QSpinBox()
         self.record_duration_spin.setRange(10, 3600)
         self.record_duration_spin.setValue(300)
@@ -1264,6 +1321,17 @@ class SessionConsole(QWidget):
             self._on_target_spec_changed
         )
 
+        self.chk_labrecorder = QCheckBox("Use LabRecorder (External)")
+        self.chk_labrecorder.setToolTip(
+            "If checked, this GUI only sends markers. YOU must start LabRecorder."
+        )
+        self.chk_labrecorder.toggled.connect(self._on_labrecorder_toggled)
+        self.chk_labrecorder.setChecked(True)
+        self._on_labrecorder_toggled(True)
+
+        btn_import_xdf = QPushButton("Import LabRecorder XDF...")
+        btn_import_xdf.clicked.connect(self._start_xdf_import)
+
         row = 0
         layout.addWidget(QLabel("Output"), row, 0)
         layout.addLayout(out_row, row, 1)
@@ -1286,10 +1354,46 @@ class SessionConsole(QWidget):
         layout.addWidget(QLabel("Hand slot"), row, 0)
         layout.addWidget(self.record_hand, row, 1)
         row += 1
+        lr_row = QHBoxLayout()
+        lr_row.addWidget(self.chk_labrecorder)
+        self.lbl_labrecorder_conn = QLabel("LR: ???")
+        self.lbl_labrecorder_conn.setStyleSheet("color: red; font-size: 10px;")
+        lr_row.addWidget(self.lbl_labrecorder_conn, alignment=Qt.AlignRight)
+
+        self.lr_timer = QTimer(self)
+        self.lr_timer.timeout.connect(self._check_lr_connection)
+        self.lr_timer.start(2000)
+
         layout.addWidget(QLabel("Target angles"), row, 0)
         layout.addWidget(self.target_angle_combo, row, 1)
+        row += 1
+        layout.addLayout(lr_row, row, 1)
+        row += 1
+        layout.addWidget(btn_import_xdf, row, 1)
         section = CollapsibleSection("Recording", content, default_open=False)
         return section
+
+    def _check_lr_connection(self):
+        if not hasattr(self, "chk_labrecorder") or not self.chk_labrecorder.isChecked():
+            if hasattr(self, "lbl_labrecorder_conn"):
+                self.lbl_labrecorder_conn.setText("LR: Disabled")
+                self.lbl_labrecorder_conn.setStyleSheet("color: gray;")
+            return
+
+        is_connected = False
+        try:
+            # Simple check if socket is open
+            with socket.create_connection(("localhost", 22345), timeout=0.1):
+                is_connected = True
+        except Exception:
+            pass
+
+        if is_connected:
+            self.lbl_labrecorder_conn.setText("LR: Connected")
+            self.lbl_labrecorder_conn.setStyleSheet("color: green; font-weight: bold;")
+        else:
+            self.lbl_labrecorder_conn.setText("LR: Not Found")
+            self.lbl_labrecorder_conn.setStyleSheet("color: red; font-weight: bold;")
 
     def _build_train_panel(self):
         content = QWidget()
@@ -1382,9 +1486,12 @@ class SessionConsole(QWidget):
         )
 
         self.train_feature_combo = QComboBox()
-        self.train_feature_combo.addItems(["bandpower_stats", "raw_flat"])
+        self.train_feature_combo.addItems(["bandpower_stats", "emd_stats", "raw_flat"])
         self.train_feature_combo.setToolTip(
-            "EMG feature extraction.\nbandpower_stats = mean/var per band;\nraw_flat = flatten window."
+            "EMG feature extraction.\n"
+            "bandpower_stats = statistical descriptors;\n"
+            "emd_stats = IMF statistics per channel;\n"
+            "raw_flat = flatten window."
         )
         self.train_feature_combo.setCurrentText(self.emg_feature_mode)
         self.train_feature_combo.currentTextChanged.connect(
@@ -1405,6 +1512,7 @@ class SessionConsole(QWidget):
 
         self.pipeline_help = QLabel(
             "Bandpower: stats per EMG band → MLP\n"
+            "EMD stats: IMF stats per EMG channel → MLP\n"
             "Raw flat: flatten window → MLP\n"
             "Transformer: external feature extractor → MLP"
         )
@@ -1614,21 +1722,39 @@ class SessionConsole(QWidget):
         layout = QVBoxLayout(content)
         layout.setSpacing(6)
 
-        self.compare_feat = QLineEdit("none")
-        self.compare_reg = QLineEdit(
-            str(
-                Path(__file__).parent
-                / "models"
-                / "joint_regressor"
-                / "mlp_regressor.pkl"
-            )
+        model_root = Path(__file__).parent / "models" / "sub-001"
+        tuned_cnn = (
+            model_root
+            / "eval_cnn_attention_001to005_tuned"
+            / "cnn_attention_regressor.h5"
         )
-        self.compare_scaler = QLineEdit(
-            str(Path(__file__).parent / "models" / "joint_regressor" / "scaler.pkl")
+        legacy_reg = (
+            Path(__file__).parent / "models" / "joint_regressor" / "mlp_regressor.pkl"
         )
+        legacy_scaler = (
+            Path(__file__).parent / "models" / "joint_regressor" / "scaler.pkl"
+        )
+        default_reg = tuned_cnn if tuned_cnn.exists() else legacy_reg
+        default_feat = (
+            "none"
+            if tuned_cnn.exists()
+            else str(Path(__file__).parent / "models" / "joint_feature_extractor.h5")
+        )
+        default_scaler = "" if tuned_cnn.exists() else str(legacy_scaler)
+
+        self.compare_feat = QLineEdit(default_feat)
+        self.compare_reg = QLineEdit(str(default_reg))
+        self.compare_scaler_path_input = QLineEdit(default_scaler)
         self.compare_smooth_spin = QSpinBox()
         self.compare_smooth_spin.setRange(0, 1000)
         self.compare_smooth_spin.setValue(int(self.compare_smooth_ms))
+        self.compare_pred_lsl_check = QCheckBox("Stream predicted angles over LSL")
+        self.compare_pred_lsl_check.setChecked(self.compare_pred_lsl_enabled)
+        self.compare_pred_lsl_check.toggled.connect(self._on_compare_pred_lsl_toggled)
+        self.compare_pred_stream_name_input = QLineEdit(self.compare_pred_stream_name)
+        self.compare_pred_stream_name_input.textChanged.connect(
+            self._on_compare_pred_stream_name_changed
+        )
         feat_row = QHBoxLayout()
         feat_row.addWidget(self.compare_feat)
         btn_feat = QPushButton("Browse")
@@ -1644,12 +1770,14 @@ class SessionConsole(QWidget):
         )
         reg_row.addWidget(btn_reg)
         scaler_row = QHBoxLayout()
-        scaler_row.addWidget(self.compare_scaler)
+        scaler_row.addWidget(self.compare_scaler_path_input)
         btn_scaler = QPushButton("Browse")
         btn_scaler.clicked.connect(
-            lambda: self._pick_file(self.compare_scaler, "Select scaler")
+            lambda: self._pick_file(self.compare_scaler_path_input, "Select scaler")
         )
         scaler_row.addWidget(btn_scaler)
+        pred_lsl_row = QHBoxLayout()
+        pred_lsl_row.addWidget(self.compare_pred_stream_name_input)
 
         header_actions = QWidget()
         btn_row = QHBoxLayout(header_actions)
@@ -1671,6 +1799,9 @@ class SessionConsole(QWidget):
         layout.addLayout(scaler_row)
         layout.addWidget(QLabel("Smoothing (ms)"))
         layout.addWidget(self.compare_smooth_spin)
+        layout.addWidget(self.compare_pred_lsl_check)
+        layout.addWidget(QLabel("Predicted angles LSL stream name"))
+        layout.addLayout(pred_lsl_row)
         note = QLabel("Uses metrics.json if present, otherwise GUI settings.")
         note.setStyleSheet("color: #9aa3ad;")
         layout.addWidget(note)
@@ -2252,7 +2383,11 @@ class SessionConsole(QWidget):
         self.flow_blocks["features"].setToolTip(f"Features + scaling\n{feat_detail}")
 
         reg_path = self.compare_reg.text().strip() if self.compare_reg else ""
-        scaler_path = self.compare_scaler.text().strip() if self.compare_scaler else ""
+        scaler_path = (
+            self.compare_scaler_path_input.text().strip()
+            if self.compare_scaler_path_input
+            else ""
+        )
         saved_ok = bool(
             reg_path
             and scaler_path
@@ -2491,9 +2626,98 @@ class SessionConsole(QWidget):
             self.task_start_btn.setEnabled(True)
             self.task_stop_btn.setEnabled(False)
 
+    def send_labrecorder_command(self, cmd):
+        try:
+            with socket.create_connection(("localhost", 22345), timeout=0.5) as s:
+                s.sendall(f"{cmd}\n".encode("ascii"))
+            return True
+        except Exception:
+            return False
+
     def _start_record(self, btn_start, btn_stop):
         if self.recording_active:
             return
+
+        if hasattr(self, "chk_labrecorder") and self.chk_labrecorder.isChecked():
+            # Check ARM button
+            if not self.arm_button.isChecked():
+                self._append_log("[WARN] Please ARM recording first.")
+                return
+
+            # Ensure Markers
+            try:
+                from lsl_utils import HAS_LSL, make_marker_outlet
+
+                if HAS_LSL and self.prompt_outlet is None:
+                    self.prompt_outlet = make_marker_outlet(name="SessionMarkers")
+            except Exception as e:
+                self._append_log(f"[error] Failed to create marker outlet: {e}")
+                return
+
+            self.record_start_time = _clock()
+            self.recording_active = True
+
+            # Send Start Marker
+            out_path = self._record_path_with_timestamp(self.record_out.text().strip())
+            session_id = Path(out_path).stem
+            if self.prompt_outlet:
+                self.prompt_outlet.push_sample([f"Session_Start:{session_id}"])
+                self.prompt_outlet.push_sample([f"Config_Target:{self.target_spec}"])
+
+            # ---- LabRecorder Remote Control ----
+            self._append_log("[LR] Sending remote START...")
+
+            # 1. Update streams list
+            self.send_labrecorder_command("update")
+
+            # 2. Configure filename via templating
+            # Syntax: filename {template:path/to/%p_%b_%n.xdf} {participant:sub-00X} {task:taskname} ...
+            # We use the existing exp_subject/exp_session fields if available
+            sub_id = "sub-001"
+            ses_id = "ses-001"
+            if hasattr(self, "exp_subject"):
+                sub_id = self.exp_subject.text().strip() or sub_id
+            if hasattr(self, "exp_session"):
+                ses_id = self.exp_session.text().strip() or ses_id
+
+            # We map 'task' to our concept of task-jointangles
+            # In LabRecorder, 'task' maps to %b (Block/Task)
+            task_name = "task-jointangles"
+
+            # IMPORTANT: The root folder must exist or be creatable by LabRecorder.
+            # We use a relative path 'processed_data' which ends up inside LabRecorder folder usually,
+            # or we can specify absolute path if needed.
+            # Best practice: use a simple relative path template.
+            # %n is likely the best run counter.
+
+            # We update participant, session, and task fields.
+            cmd_file = f"filename {{template:processed_data/%p_%s_%b_%n.xdf}} {{participant:{sub_id}}} {{session:{ses_id}}} {{task:{task_name}}}"
+
+            self.send_labrecorder_command("stop")  # Ensure stopped
+            self.send_labrecorder_command("select all")  # Select all streams
+            self.send_labrecorder_command(cmd_file)
+
+            # 3. Start
+            ok = self.send_labrecorder_command("start")
+            if not ok:
+                self._append_log(
+                    "[LR-ERR] Connecting to LabRecorder failed (is RCS enabled?). Manual start required."
+                )
+            else:
+                self._append_log("[LR] Remote start command sent.")
+            # ------------------------------------
+
+            btn_start.setEnabled(False)
+            btn_stop.setEnabled(True)
+            if self.record_led:
+                self.record_led.setStyleSheet("color: #44ff44; font-size: 16px;")
+
+            duration = int(self.record_duration_spin.value())
+            self._append_log(
+                f"[record] LabRecorder Mode STARTED. Markers active. Session: {session_id}. Auto-stop in {duration}s"
+            )
+            return
+
         if not (
             self.monitor.emg_connected
             and "Connected" in self.angle_status.text()
@@ -2511,7 +2735,9 @@ class SessionConsole(QWidget):
             self._append_log(
                 "[record] WARN: EMG filters unavailable; recording raw EMG."
             )
-        out_path = self.record_out.text().strip()
+        out_path = self._record_path_with_timestamp(self.record_out.text().strip())
+        self.record_out.setText(out_path)
+        self._record_out_auto = out_path
         self.record_duration = int(self.record_duration_spin.value())
         self.record_window_ms = float(self.record_window_spin.value())
         self.record_overlap_ms = float(self.record_overlap_spin.value())
@@ -2558,6 +2784,9 @@ class SessionConsole(QWidget):
         self.record_window_ts = []
         self.record_marker_labels = []
         self.record_imu_windows = []
+        self.record_landmark_xyz_windows = []
+        self.record_landmark_valid_count = 0
+        self.last_angle_landmark_xyz = None
         self.record_skip_no_angle = 0
         self.record_skip_nan_angle = 0
         self.record_skip_old_angle = 0
@@ -2577,6 +2806,38 @@ class SessionConsole(QWidget):
             f"overlap={self.record_overlap_ms:.0f}ms/{self.record_overlap} samples, "
             f"lag={self.angle_lag_ms:.0f}ms, wrist={self.record_wrist or 'n/a'})"
         )
+
+    def _start_xdf_import(self):
+        start_dir = str(Path.cwd())
+        if hasattr(self, "root_path") and self.root_path.exists():
+            start_dir = str(self.root_path)
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import XDF File", start_dir, "XDF Files (*.xdf)"
+        )
+        if not path:
+            return
+
+        self._append_log(f"\n[xdf] Starting import for: {path}")
+
+        # Prepare arguments matching the GUI state
+        args = [
+            path,
+            "--window_ms",
+            str(self.record_window_spin.value()),
+            "--overlap_ms",
+            str(self.record_overlap_spin.value()),
+        ]
+
+        if hasattr(self, "exp_subject"):
+            args += ["--subject", str(self.exp_subject.text().strip() or "sub-001")]
+
+        if hasattr(self, "exp_session"):
+            # Task name can be constructed from session ID or prompt plan
+            sess = self.exp_session.text().strip() or "ses-001"
+            args += ["--task", f"{sess}_task-jointangles"]
+
+        self._run_script("import_labrecorder_xdf.py", args, "xdf")
 
     def _start_train(self, btn_start, btn_stop):
         if self.proc_train:
@@ -2874,25 +3135,43 @@ class SessionConsole(QWidget):
 
         feat_path = self.compare_feat.text().strip()
         reg_path = self.compare_reg.text().strip()
-        scaler_path = self.compare_scaler.text().strip()
+        scaler_path = self.compare_scaler_path_input.text().strip()
         self.compare_emg_transform = self.emg_transform
         self.compare_feature_mode = self.emg_feature_mode
+        self.compare_model_kind = "feature_regressor"
+        self.compare_use_imu_model = False
 
         if not os.path.exists(reg_path):
             self._append_log(f"[compare] Regressor not found: {reg_path}")
             return
-        if not os.path.exists(scaler_path):
-            self._append_log(f"[compare] Scaler not found: {scaler_path}")
-            return
 
-        try:
-            with open(reg_path, "rb") as f:
-                self.compare_regressor = pickle.load(f)
-            with open(scaler_path, "rb") as f:
-                self.compare_scaler = pickle.load(f)
-        except Exception as exc:
-            self._append_log(f"[compare] Failed to load regressor/scaler: {exc}")
-            return
+        if reg_path.lower().endswith(".h5"):
+            try:
+                from tensorflow.keras.models import load_model
+
+                self.compare_regressor = load_model(
+                    reg_path,
+                    compile=False,
+                    custom_objects=_cnn_custom_objects(),
+                )
+                self.compare_scaler_model = None
+                self.compare_model_kind = "cnn_attention"
+            except Exception as exc:
+                self._append_log(f"[compare] Failed to load CNN regressor: {exc}")
+                return
+        else:
+            if not scaler_path or not os.path.exists(scaler_path):
+                self._append_log(f"[compare] Scaler not found: {scaler_path}")
+                return
+            try:
+                with open(reg_path, "rb") as f:
+                    self.compare_regressor = pickle.load(f)
+                with open(scaler_path, "rb") as f:
+                    self.compare_scaler_model = pickle.load(f)
+                self.compare_model_kind = "feature_regressor"
+            except Exception as exc:
+                self._append_log(f"[compare] Failed to load regressor/scaler: {exc}")
+                return
 
         metrics_path = Path(reg_path).with_name("metrics.json")
         if metrics_path.exists():
@@ -2905,6 +3184,13 @@ class SessionConsole(QWidget):
                     "emg_feature_mode",
                     metrics.get("feature_mode", self.compare_feature_mode),
                 )
+                model_type = str(metrics.get("model_type", "")).lower()
+                if "cnn_attention" in model_type:
+                    self.compare_model_kind = "cnn_attention"
+                self.compare_emd_max_imfs = int(
+                    metrics.get("emd_max_imfs", self.compare_emd_max_imfs)
+                )
+                self.compare_use_imu_model = bool(metrics.get("use_imu", False))
                 if metrics.get("target_spec"):
                     self.target_spec = metrics.get("target_spec")
                 if metrics.get("angle_keys"):
@@ -2926,12 +3212,43 @@ class SessionConsole(QWidget):
             except Exception as exc:
                 self._append_log(f"[compare] Failed to load target scaler: {exc}")
                 self.compare_target_scaler = None
+        else:
+            self.compare_target_scaler = None
 
-        try:
-            self.compare_extractor = self._load_feature_extractor(feat_path)
-        except Exception as exc:
-            self._append_log(f"[compare] Failed to load feature extractor: {exc}")
-            return
+        personalization_candidates = [
+            Path(reg_path).with_name("personalization_diagonal_identity.pkl"),
+            Path(reg_path).with_name("personalization.pkl"),
+        ]
+        personalization_path = next(
+            (p for p in personalization_candidates if p.exists()), None
+        )
+        if personalization_path is not None:
+            try:
+                with open(personalization_path, "rb") as f:
+                    payload = pickle.load(f)
+                self.compare_personalization = (
+                    payload if isinstance(payload, dict) else None
+                )
+                if self.compare_personalization is not None:
+                    self._append_log(
+                        f"[compare] Loaded personalization adaptor ({personalization_path.name})"
+                    )
+            except Exception as exc:
+                self._append_log(
+                    f"[compare] Failed to load personalization adaptor: {exc}"
+                )
+                self.compare_personalization = None
+        else:
+            self.compare_personalization = None
+
+        if self.compare_model_kind == "cnn_attention":
+            self.compare_extractor = None
+        else:
+            try:
+                self.compare_extractor = self._load_feature_extractor(feat_path)
+            except Exception as exc:
+                self._append_log(f"[compare] Failed to load feature extractor: {exc}")
+                return
 
         self.angle_lag_ms = float(self.angle_lag_spin.value())
         self.angle_lag_s = self.angle_lag_ms / 1000.0
@@ -2945,6 +3262,16 @@ class SessionConsole(QWidget):
         )
         self.compare_smooth_ms = float(self.compare_smooth_spin.value())
         self.compare_pred_history = []
+        self.compare_pred_lsl_enabled = (
+            bool(self.compare_pred_lsl_check.isChecked())
+            if hasattr(self, "compare_pred_lsl_check")
+            else False
+        )
+        if hasattr(self, "compare_pred_stream_name_input"):
+            self.compare_pred_stream_name = (
+                self.compare_pred_stream_name_input.text().strip()
+                or "PredictedJointAngles"
+            )
         if self.target_keys:
             self.compare_joints_idx = list(range(len(self.target_keys)))
         else:
@@ -2958,8 +3285,20 @@ class SessionConsole(QWidget):
         self.compare_ts_buf = np.zeros((0,), dtype=np.float64)
         self.compare_imu_buf = np.zeros((0, 9), dtype=np.float32)
         self.compare_last_chunk_id = -1
+
+        self.compare_pred_outlet = None
+        if self.compare_pred_lsl_enabled:
+            keys = list(self.target_keys) if self.target_keys else list(ANGLE_KEYS)
+            if not self._setup_compare_pred_outlet(keys):
+                return
+
         self.compare_active = True
-        self.compare_label.setText("Compare: running")
+        lsl_suffix = (
+            f" (LSL: {self.compare_pred_stream_name})"
+            if self.compare_pred_lsl_enabled and self.compare_pred_outlet is not None
+            else ""
+        )
+        self.compare_label.setText(f"Compare: running{lsl_suffix}")
         btn_start.setEnabled(False)
         btn_stop.setEnabled(True)
 
@@ -2967,8 +3306,12 @@ class SessionConsole(QWidget):
         self.compare_active = False
         self.compare_extractor = None
         self.compare_regressor = None
-        self.compare_scaler = None
+        self.compare_model_kind = "feature_regressor"
+        self.compare_use_imu_model = False
+        self.compare_scaler_model = None
         self.compare_target_scaler = None
+        self.compare_personalization = None
+        self.compare_pred_outlet = None
         self.compare_pred_history = []
         self.compare_emg_buf = np.zeros((0, 8), dtype=np.float32)
         self.compare_ts_buf = np.zeros((0,), dtype=np.float64)
@@ -2977,6 +3320,49 @@ class SessionConsole(QWidget):
             self.compare_label.setText("Compare: N/A")
         btn_start.setEnabled(True)
         btn_stop.setEnabled(False)
+
+    def _on_compare_pred_lsl_toggled(self, checked):
+        self.compare_pred_lsl_enabled = bool(checked)
+
+    def _on_compare_pred_stream_name_changed(self, value):
+        txt = str(value).strip()
+        self.compare_pred_stream_name = txt if txt else "PredictedJointAngles"
+
+    def _setup_compare_pred_outlet(self, angle_keys):
+        self.compare_pred_outlet = None
+        if not HAS_LSL or StreamInfo is None or StreamOutlet is None:
+            self._append_log("[compare] LSL unavailable; cannot stream predictions.")
+            return False
+        stream_name = self.compare_pred_stream_name or "PredictedJointAngles"
+        source_id = f"nml_predicted_angles_{int(time.time())}"
+        try:
+            info = StreamInfo(
+                stream_name,
+                self.compare_pred_stream_type,
+                int(len(angle_keys)),
+                0,
+                "float32",
+                source_id,
+            )
+            try:
+                ch = info.desc().append_child("channels")
+                for key in angle_keys:
+                    c = ch.append_child("channel")
+                    c.append_child_value("label", str(key))
+                    c.append_child_value("unit", "deg")
+            except Exception:
+                pass
+            self.compare_pred_outlet = StreamOutlet(info)
+            self._append_log(
+                f"[compare] Predicted-angle LSL outlet ready: {stream_name} ({len(angle_keys)} ch)"
+            )
+            return True
+        except Exception as exc:
+            self._append_log(
+                f"[compare] Failed to create predicted-angle outlet: {exc}"
+            )
+            self.compare_pred_outlet = None
+            return False
 
     def _ms_to_samples(self, ms):
         return max(1, int(round((float(ms) / 1000.0) * self.record_fs)))
@@ -3090,6 +3476,7 @@ class SessionConsole(QWidget):
             )
             return None
         global KerasFeatureExtractor, PyTorchFeatureExtractor
+        local_keras_model = None
         if KerasFeatureExtractor is None and PyTorchFeatureExtractor is None:
             try:
                 inference_path = (
@@ -3125,8 +3512,27 @@ class SessionConsole(QWidget):
                     "Check NumPy/TensorFlow compatibility."
                 )
                 self._append_log(f"[compare] Import error: {exc}")
-                return None
+                if str(path).lower().endswith(".h5"):
+                    try:
+                        from tensorflow.keras.models import load_model
+
+                        local_keras_model = load_model(
+                            path,
+                            custom_objects=_cnn_custom_objects(),
+                        )
+                        self._append_log(
+                            "[compare] Loaded .h5 model via local TensorFlow fallback."
+                        )
+                    except Exception as tf_exc:
+                        self._append_log(
+                            f"[compare] TensorFlow fallback load failed: {tf_exc}"
+                        )
+                        return None
+                else:
+                    return None
         if path.endswith(".h5"):
+            if local_keras_model is not None:
+                return local_keras_model
             if KerasFeatureExtractor is None:
                 raise RuntimeError(
                     "KerasFeatureExtractor unavailable in this environment."
@@ -3169,6 +3575,75 @@ class SessionConsole(QWidget):
         slope = np.tensordot(emg, t, axes=([2], [0])) / denom
         return np.concatenate([mean, std, minv, maxv, diff_energy, slope], axis=1)
 
+    def _get_emd_class(self):
+        if hasattr(self, "_emd_class") and self._emd_class is not None:
+            return self._emd_class
+        from PyEMD import EMD
+
+        self._emd_class = EMD
+        return self._emd_class
+
+    def _spectral_centroid_norm(self, signal_1d):
+        spec = np.abs(np.fft.rfft(signal_1d))
+        if spec.size <= 1:
+            return 0.0
+        denom = float(np.sum(spec))
+        if denom <= 1e-12:
+            return 0.0
+        bins = np.arange(spec.size, dtype=np.float32)
+        centroid = float(np.sum(bins * spec) / denom)
+        return centroid / float(max(1, spec.size - 1))
+
+    def _emd_features(self, emg, max_imfs=3):
+        if emg.size == 0:
+            return np.zeros((0, 0), dtype=np.float32)
+        max_imfs = max(1, int(max_imfs))
+        EMD = self._get_emd_class()
+        n, c, t = emg.shape
+        per_imf_feats = 6
+        out = np.zeros((n, c * (max_imfs * per_imf_feats + 1)), dtype=np.float32)
+
+        for i in range(n):
+            row = []
+            for ch in range(c):
+                sig = np.asarray(emg[i, ch], dtype=np.float32)
+                total_energy = float(np.sum(sig**2) + 1e-8)
+                imfs = EMD().emd(sig)
+                if imfs is None or np.size(imfs) == 0:
+                    imfs = np.zeros((0, t), dtype=np.float32)
+                else:
+                    imfs = np.asarray(imfs, dtype=np.float32)
+                    if imfs.ndim == 1:
+                        imfs = imfs[None, :]
+
+                use_count = int(min(max_imfs, imfs.shape[0]))
+                for k in range(max_imfs):
+                    if k < use_count:
+                        imf = imfs[k]
+                        rms = float(np.sqrt(np.mean(imf**2)))
+                        std = float(np.std(imf))
+                        abs_mean = float(np.mean(np.abs(imf)))
+                        zcr = (
+                            float(np.mean((imf[:-1] * imf[1:]) < 0.0))
+                            if imf.size > 1
+                            else 0.0
+                        )
+                        energy = float(np.sum(imf**2))
+                        energy_ratio = energy / total_energy
+                        centroid = self._spectral_centroid_norm(imf)
+                        row.extend([rms, std, abs_mean, zcr, energy_ratio, centroid])
+                    else:
+                        row.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+                residue = (
+                    sig - np.sum(imfs[:use_count], axis=0) if use_count > 0 else sig
+                )
+                residue_ratio = float(np.sum(residue**2) / total_energy)
+                row.append(residue_ratio)
+
+            out[i] = np.asarray(row, dtype=np.float32)
+        return out
+
     def _extract_features(self, emg_input, extractor):
         arr = emg_input
         if arr.ndim == 4 and arr.shape[-1] == 1:
@@ -3177,8 +3652,25 @@ class SessionConsole(QWidget):
         if extractor is None:
             if self.compare_feature_mode == "bandpower_stats":
                 return self._bandpower_features(arr)
+            if self.compare_feature_mode == "emd_stats":
+                return self._emd_features(arr, max_imfs=self.compare_emd_max_imfs)
             return arr.reshape(arr.shape[0], -1)
         return extractor.predict(arr[..., None], verbose=0)
+
+    def _apply_personalization(self, pred):
+        if self.compare_personalization is None:
+            return pred
+        coef = np.asarray(self.compare_personalization.get("coef"), dtype=np.float32)
+        intercept = np.asarray(
+            self.compare_personalization.get("intercept"), dtype=np.float32
+        )
+        y = np.asarray(pred, dtype=np.float32).reshape(1, -1)
+        if coef.ndim != 2 or y.shape[1] != coef.shape[1]:
+            raise ValueError(
+                f"personalization dim mismatch: pred={y.shape[1]}, adaptor={coef.shape}"
+            )
+        out = y @ coef.T + intercept.reshape(1, -1)
+        return out.reshape(-1)
 
     def _imu_features(self, window):
         if window is None:
@@ -3192,6 +3684,39 @@ class SessionConsole(QWidget):
         mean = imu.mean(axis=1)
         std = imu.std(axis=1)
         return np.concatenate([mean, std], axis=0)[None, ...]
+
+    def _extract_landmarks_xyz_from_flat_sample(
+        self, raw_sample, hand_idx, per_hand=None
+    ):
+        vec = np.asarray(raw_sample, dtype=np.float32).reshape(-1)
+        if vec.size < 63:
+            return None
+
+        if per_hand is None or per_hand <= 0:
+            per_hand = len(ANGLE_KEYS) if ANGLE_KEYS else 0
+
+        valid_angle_prefixes = {0}
+        if per_hand > 0:
+            valid_angle_prefixes.add(per_hand)
+            valid_angle_prefixes.add(per_hand * 2)
+
+        for lm_dims in (126, 63):
+            if vec.size < lm_dims:
+                continue
+            prefix = vec.size - lm_dims
+            if prefix not in valid_angle_prefixes:
+                continue
+            lm_flat = vec[-lm_dims:]
+            if lm_dims == 63:
+                if hand_idx not in (0,):
+                    return None
+                return lm_flat.reshape(21, 3)
+            start = int(hand_idx) * 63
+            end = start + 63
+            if end > lm_flat.size:
+                return None
+            return lm_flat[start:end].reshape(21, 3)
+        return None
 
     def _nearest_angle_sample_at(self, timestamp, hand_idx, max_age=0.2):
         if not self.angle_buffer:
@@ -3256,7 +3781,13 @@ class SessionConsole(QWidget):
                 pass
 
     def _run_script(self, script_name, args, tag):
-        script_path = str(Path(__file__).parent / script_name)
+        base = Path(__file__).parent
+        candidate_scripts = base / "scripts" / script_name
+        candidate_root = base / script_name
+        if candidate_scripts.exists():
+            script_path = str(candidate_scripts)
+        else:
+            script_path = str(candidate_root)
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.MergedChannels)
         proc.readyReadStandardOutput.connect(lambda: self._on_proc_output(proc, tag))
@@ -3281,6 +3812,17 @@ class SessionConsole(QWidget):
             if not candidate.exists():
                 return candidate
             n += 1
+
+    def _record_path_with_timestamp(self, out_path):
+        path_text = str(out_path).strip() if out_path else ""
+        if not path_text:
+            path = Path(__file__).parent / "data" / "session.npz"
+        else:
+            path = Path(path_text)
+        suffix = path.suffix if path.suffix else ".npz"
+        stem = re.sub(r"_\d{6}-\d{6}$", "", path.stem)
+        stamp = datetime.now().strftime("%d%m%y-%H%M%S")
+        return str(path.with_name(f"{stem}_{stamp}{suffix}"))
 
     def _pick_save(self, target, title):
         path, _ = QFileDialog.getSaveFileName(self, title)
@@ -3385,6 +3927,22 @@ class SessionConsole(QWidget):
         self.log_view.moveCursor(self.log_view.textCursor().End)
 
     def _record_tick(self):
+        if hasattr(self, "chk_labrecorder") and self.chk_labrecorder.isChecked():
+            if self.recording_active:
+                elapsed = _clock() - self.record_start_time
+                duration = self.record_duration_spin.value()
+                if duration > 0 and elapsed >= duration:
+                    self._append_log("[record] Duration reached (LR Mode).")
+                    self._finish_record(save=False)
+                    return
+
+                if self.record_windows_label:
+                    self.record_windows_label.setText(f"LR Active: {elapsed:.1f}s")
+            # IMPORTANT: We return early here to skip all internal buffering/saving logic
+            # This prevents Python-side jitter from affecting the LSL streams.
+            # The actual data is recorded by LabRecorder (C++).
+            return
+
         if not self.recording_active:
             return
         if not self.monitor.emg_connected:
@@ -3444,6 +4002,16 @@ class SessionConsole(QWidget):
                 self.record_angle_targets.append(angle_sample)
                 self.record_window_ts.append(t_center)
                 self.record_marker_labels.append(self._nearest_marker_label(t_center))
+                landmark_xyz = self.last_angle_landmark_xyz
+                if landmark_xyz is None:
+                    landmark_xyz = np.full((21, 3), np.nan, dtype=np.float32)
+                else:
+                    landmark_xyz = np.asarray(landmark_xyz, dtype=np.float32)
+                    if landmark_xyz.shape != (21, 3):
+                        landmark_xyz = np.full((21, 3), np.nan, dtype=np.float32)
+                    elif np.isfinite(landmark_xyz).all():
+                        self.record_landmark_valid_count += 1
+                self.record_landmark_xyz_windows.append(landmark_xyz)
                 if self.record_imu_buf.shape[0] >= self.record_window_len:
                     imu_window = self.record_imu_buf[: self.record_window_len]
                     self.record_imu_windows.append(imu_window.T)
@@ -3469,7 +4037,7 @@ class SessionConsole(QWidget):
             return
         if self.monitor.last_chunk_id == self.compare_last_chunk_id:
             return
-        if self.compare_regressor is None or self.compare_scaler is None:
+        if self.compare_regressor is None:
             return
 
         chunk = self.monitor.last_emg_chunk
@@ -3514,22 +4082,59 @@ class SessionConsole(QWidget):
                     self.compare_imu_buf = self.compare_imu_buf[stride:]
                 continue
 
-            emg_input = window.T[..., None][None, ...]
-            feats = self._extract_features(emg_input, self.compare_extractor)
-            if self.compare_imu_buf.shape[0] >= self.compare_window_len:
-                imu_window = self.compare_imu_buf[: self.compare_window_len]
-                imu_feat = self._imu_features(imu_window)
-                if imu_feat is not None:
-                    feats = np.concatenate([feats, imu_feat], axis=1)
-            feats = self.compare_scaler.transform(feats)
-            pred_scaled = self.compare_regressor.predict(feats)[0]
-            if self.compare_target_scaler is not None:
-                pred_angles = self.compare_target_scaler.inverse_transform(
-                    pred_scaled.reshape(1, -1)
-                )[0]
-            else:
-                pred_angles = pred_scaled
+            try:
+                emg_input = window.T[..., None][None, ...]
+                if self.compare_model_kind == "cnn_attention":
+                    model_input = emg_input
+                    if self.compare_use_imu_model:
+                        imu_feat = None
+                        if self.compare_imu_buf.shape[0] >= self.compare_window_len:
+                            imu_window = self.compare_imu_buf[: self.compare_window_len]
+                            imu_feat = self._imu_features(imu_window)
+                        if imu_feat is None:
+                            self._append_log(
+                                "[compare] CNN model expects IMU features but none are available."
+                            )
+                            self.compare_emg_buf = self.compare_emg_buf[stride:]
+                            self.compare_ts_buf = self.compare_ts_buf[stride:]
+                            if self.compare_imu_buf.shape[0] >= stride:
+                                self.compare_imu_buf = self.compare_imu_buf[stride:]
+                            continue
+                        model_input = [emg_input, imu_feat]
+                    pred_scaled = self.compare_regressor.predict(
+                        model_input, verbose=0
+                    )[0]
+                else:
+                    feats = self._extract_features(emg_input, self.compare_extractor)
+                    if self.compare_imu_buf.shape[0] >= self.compare_window_len:
+                        imu_window = self.compare_imu_buf[: self.compare_window_len]
+                        imu_feat = self._imu_features(imu_window)
+                        if imu_feat is not None:
+                            feats = np.concatenate([feats, imu_feat], axis=1)
+                    feats = self.compare_scaler_model.transform(feats)
+                    pred_scaled = self.compare_regressor.predict(feats)[0]
+                if self.compare_target_scaler is not None:
+                    pred_angles = self.compare_target_scaler.inverse_transform(
+                        pred_scaled.reshape(1, -1)
+                    )[0]
+                else:
+                    pred_angles = pred_scaled
+                pred_angles = self._apply_personalization(pred_angles)
+            except Exception as exc:
+                self._append_log(f"[compare] Prediction step failed: {exc}")
+                self.compare_emg_buf = self.compare_emg_buf[stride:]
+                self.compare_ts_buf = self.compare_ts_buf[stride:]
+                if self.compare_imu_buf.shape[0] >= stride:
+                    self.compare_imu_buf = self.compare_imu_buf[stride:]
+                continue
             pred_angles = self._smooth_predictions(pred_angles)
+            if self.compare_pred_outlet is not None:
+                try:
+                    self.compare_pred_outlet.push_sample(
+                        np.asarray(pred_angles, dtype=np.float32).tolist()
+                    )
+                except Exception:
+                    self.compare_pred_outlet = None
 
             idxs = self.compare_joints_idx or [0]
             gt = angle_sample[idxs]
@@ -3583,6 +4188,7 @@ class SessionConsole(QWidget):
 
     def _nearest_angle_sample(self, timestamp):
         timestamp = timestamp + self.angle_lag_s
+        self.last_angle_landmark_xyz = None
         if not self.angle_buffer:
             self.record_skip_no_angle += 1
             return None
@@ -3590,7 +4196,8 @@ class SessionConsole(QWidget):
         if abs(best[0] - timestamp) > self.record_max_age:
             self.record_skip_old_angle += 1
             return None
-        sample = np.asarray(best[1], dtype=np.float32).reshape(-1)
+        raw_sample = np.asarray(best[1], dtype=np.float32).reshape(-1)
+        sample = raw_sample
         per_hand = len(ANGLE_KEYS) if ANGLE_KEYS else None
         if per_hand is None or per_hand <= 0:
             if sample.size % 2 == 0:
@@ -3598,6 +4205,9 @@ class SessionConsole(QWidget):
             else:
                 self.record_skip_no_angle += 1
                 return None
+        self.last_angle_landmark_xyz = self._extract_landmarks_xyz_from_flat_sample(
+            raw_sample, self.record_hand_idx, per_hand=per_hand
+        )
         start = self.record_hand_idx * per_hand
         end = start + per_hand
         if sample.size < end:
@@ -3697,6 +4307,35 @@ class SessionConsole(QWidget):
         self.record_filters = self._build_filters()
 
     def _finish_record(self, save=True):
+        if hasattr(self, "chk_labrecorder") and self.chk_labrecorder.isChecked():
+            if self.recording_active:
+                if self.prompt_outlet:
+                    self.prompt_outlet.push_sample(["Session_End"])
+
+                # ---- Remote Stop ----
+                ok = self.send_labrecorder_command("stop")
+                if ok:
+                    self._append_log("[LR] Remote STOP sent.")
+                else:
+                    self._append_log(
+                        "[LR-ERR] Could not send remote STOP. Stop manually!"
+                    )
+                # ---------------------
+
+                self._append_log("[record] LabRecorder Mode STOPPED.")
+
+            self.recording_active = False
+            # Force cleanup of session state locally
+            self.record_emg_buf = np.zeros((0, 8), dtype=np.float32)
+
+            if hasattr(self, "record_start_btn") and self.record_start_btn:
+                self.record_start_btn.setEnabled(True)
+            if hasattr(self, "record_stop_btn") and self.record_stop_btn:
+                self.record_stop_btn.setEnabled(False)
+            if self.record_led:
+                self.record_led.setStyleSheet("color: #ff6666; font-size: 16px;")
+            return
+
         if not self.recording_active:
             return
         self.recording_active = False
@@ -3712,6 +4351,10 @@ class SessionConsole(QWidget):
                 self.record_out_path,
                 emg=np.asarray(self.record_emg_windows, dtype=np.float32),
                 angles=np.asarray(self.record_angle_targets, dtype=np.float32),
+                landmark_xyz=np.asarray(
+                    self.record_landmark_xyz_windows, dtype=np.float32
+                ),
+                landmark_valid_windows=int(self.record_landmark_valid_count),
                 timestamps=np.asarray(self.record_window_ts, dtype=np.float64),
                 markers=np.asarray(self.record_marker_labels, dtype=object),
                 imu=np.asarray(self.record_imu_windows, dtype=np.float32),
@@ -3740,12 +4383,10 @@ class SessionConsole(QWidget):
             )
             self._append_log(
                 f"[record] Saved: {self.record_out_path} (windows={len(self.record_emg_windows)}, "
+                f"landmark_valid={self.record_landmark_valid_count}, "
                 f"no_angle={self.record_skip_no_angle}, old_angle={self.record_skip_old_angle}, "
                 f"nan_angle={self.record_skip_nan_angle}, filled_nan={self.record_fill_nan_angle})"
             )
-            # Auto-advance to next available session number
-            next_path = self._next_session_path()
-            self.record_out.setText(str(next_path))
 
     def _load_prompt_preview(self):
         path = self.prompt_plan.text().strip()

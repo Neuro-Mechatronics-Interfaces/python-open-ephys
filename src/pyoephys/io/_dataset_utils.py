@@ -4,17 +4,19 @@ pyoephys.io._dataset_utils
 Dataset building utilities (Ported from python-intan).
 """
 
-import os
-import re
 import json
 import logging
+import os
+import re
+from typing import List, Tuple
+
 import numpy as np
-from typing import List, Tuple, Optional
 
 from pyoephys.processing import EMGPreprocessor
-from ._file_utils import labels_from_events, find_event_for_file
-from ._grid_utils import infer_grid_dimensions, apply_grid_permutation, parse_orientation_from_filename
-from ..io import load_open_ephys_session
+
+from ._file_utils import find_event_for_file, labels_from_events
+from ._session_loader import load_open_ephys_session
+
 
 def normalize_name(s: str) -> str:
     s = s.strip().upper()
@@ -23,7 +25,10 @@ def normalize_name(s: str) -> str:
         return f"CH{int(s[2:])}"
     return s
 
-def build_indices_from_mapping(raw_names: List[str], mapping_names: List[str], strict: bool = True) -> List[int]:
+
+def build_indices_from_mapping(
+    raw_names: List[str], mapping_names: List[str], strict: bool = True
+) -> List[int]:
     lookup = {normalize_name(n): i for i, n in enumerate(raw_names)}
     indices = []
     missing = []
@@ -33,32 +38,35 @@ def build_indices_from_mapping(raw_names: List[str], mapping_names: List[str], s
             indices.append(lookup[key])
         else:
             missing.append(nm)
-    
+
     if strict and missing:
         raise ValueError(f"Channel mapping references missing names: {missing[:5]}...")
     return indices
+
 
 def select_channels(
     raw_names: List[str],
     channels: List[int] | None,
     channel_map: str | None,
     channel_map_file: str,
-    non_strict: bool = False
+    non_strict: bool = False,
 ) -> Tuple[List[int], List[str]]:
-    
+
     if channel_map:
-        with open(channel_map_file, 'r') as f:
+        with open(channel_map_file, "r") as f:
             mappings = json.load(f)
         if channel_map not in mappings:
             raise KeyError(f"Mapping '{channel_map}' not in {channel_map_file}")
-        
+
         mapping_names = mappings[channel_map]
-        indices = build_indices_from_mapping(raw_names, mapping_names, strict=not non_strict)
+        indices = build_indices_from_mapping(
+            raw_names, mapping_names, strict=not non_strict
+        )
         return indices, [raw_names[i] for i in indices]
-        
+
     if channels:
         return channels, [raw_names[i] for i in channels]
-        
+
     return list(range(len(raw_names))), raw_names
 
 
@@ -73,15 +81,14 @@ def load_open_ephys_data(path: str) -> dict:
 
     # Map SessionData dict to process_recording format
     # SessionData: amplifier_data (C, S), t_amplifier (S,), sample_rate, channel_names
-    
+
     return {
         "amplifier_data": session_data["amplifier_data"],
         "t_amplifier": session_data["t_amplifier"],
         "frequency_parameters": {"amplifier_sample_rate": session_data["sample_rate"]},
         "sample_rate": session_data["sample_rate"],
-        "channel_names": session_data["channel_names"]
+        "channel_names": session_data["channel_names"],
     }
-
 
 
 def assess_channel_quality(
@@ -116,7 +123,7 @@ def assess_channel_quality(
     C, N = emg.shape
     rms = np.sqrt(np.mean(emg.astype(np.float64) ** 2, axis=1)).astype(np.float32)
 
-    dead      = np.where(rms < min_rms_uv)[0].tolist()
+    dead = np.where(rms < min_rms_uv)[0].tolist()
     saturated = np.where(rms > max_rms_uv)[0].tolist()
 
     flat = []
@@ -126,7 +133,7 @@ def assess_channel_quality(
             if frac > flat_fraction:
                 flat.append(ch)
 
-    bad  = set(dead) | set(saturated) | set(flat)
+    bad = set(dead) | set(saturated) | set(flat)
     good = [i for i in range(C) if i not in bad]
 
     summary = (
@@ -135,12 +142,12 @@ def assess_channel_quality(
     )
 
     return {
-        "good":      good,
-        "dead":      dead,
+        "good": good,
+        "dead": dead,
         "saturated": saturated,
-        "flat":      flat,
-        "rms":       rms,
-        "summary":   summary,
+        "flat": flat,
+        "rms": rms,
+        "summary": summary,
     }
 
 
@@ -168,23 +175,30 @@ def process_recording(
     that begin mid-session the offset is derived from ``t_amplifier[0] * fs``.
     """
 
-    fs = float(data.get("frequency_parameters", {}).get("amplifier_sample_rate") or data.get("sample_rate", 2000))
+    fs = float(
+        data.get("frequency_parameters", {}).get("amplifier_sample_rate")
+        or data.get("sample_rate", 2000)
+    )
     emg = data["amplifier_data"]  # (C, N)
-    t   = data["t_amplifier"]
+    t = data["t_amplifier"]
     raw_names = data.get("channel_names", [f"CH{i}" for i in range(emg.shape[0])])
 
     if channels:
         emg = emg[channels, :]
 
     if paper_style:
-        pre = EMGPreprocessor(fs=fs, band=(120.0, fs/2-1), envelope_cutoff=None, feature_fns=["rms"])
+        pre = EMGPreprocessor(
+            fs=fs, band=(120.0, fs / 2 - 1), envelope_cutoff=None, feature_fns=["rms"]
+        )
     else:
         pre = EMGPreprocessor(fs=fs, envelope_cutoff=5.0)
 
     emg_pp = pre.preprocess(emg)
 
     feature_fns = ["rms"] if paper_style else None
-    X = pre.extract_emg_features(emg_pp, window_ms, step_ms, feature_fns=feature_fns, progress=False)
+    X = pre.extract_emg_features(
+        emg_pp, window_ms, step_ms, feature_fns=feature_fns, progress=False
+    )
 
     # ── Absolute sample offset ─────────────────────────────────────────────
     # t_amplifier stores seconds since Open Ephys session start.  For a
@@ -192,13 +206,17 @@ def process_recording(
     # ≡ sample 161 253 at 2000 Hz.  Label files (e.g. emg.txt) use the same
     # absolute sample-counter space, so we must offset window_starts to match.
     step_samples = int(step_ms * fs / 1000)
-    start_sample = int(round(float(t[0]) * fs)) if len(t) > 0 and float(t[0]) > 0.5 else 0
+    start_sample = (
+        int(round(float(t[0]) * fs)) if len(t) > 0 and float(t[0]) > 0.5 else 0
+    )
     window_starts = np.arange(X.shape[0]) * step_samples + start_sample
 
     if events_file is None:
         events_file = find_event_for_file(root_dir, file_path)
         if not events_file:
-            logging.warning(f"No event file found for {file_path}. Using folder name label.")
+            logging.warning(
+                f"No event file found for {file_path}. Using folder name label."
+            )
             label = os.path.basename(os.path.dirname(file_path))
             y = np.full(X.shape[0], label)
             meta = {"fs": fs, "selected_channels": channels, "channel_names": raw_names}
@@ -217,7 +235,7 @@ def process_recording(
     mask &= ~np.array([str(lbl).lower() in base_ignore for lbl in y])
 
     if not keep_trial:
-        y = np.array([re.sub(r'_\d+$', '', l) for l in y])
+        y = np.array([re.sub(r"_\d+$", "", l) for l in y])
 
     X = X[mask]
     y = y[mask]
@@ -225,7 +243,9 @@ def process_recording(
     metadata = {
         "fs": fs,
         "selected_channels": channels,
-        "channel_names": raw_names if channels is None else [raw_names[i] for i in channels],
+        "channel_names": raw_names
+        if channels is None
+        else [raw_names[i] for i in channels],
         "envelope_cutoff_hz": getattr(pre, "env_cut", 5.0) or 5.0,
     }
 
@@ -285,7 +305,18 @@ def process_recordings(
     return np.concatenate(X_parts, axis=0), np.concatenate(y_parts, axis=0), meta
 
 
-def save_dataset(save_path, X, y, metadata, window_ms, step_ms, channel_map=None, channel_map_file=None, modality='emg', ignore_labels=None):
+def save_dataset(
+    save_path,
+    X,
+    y,
+    metadata,
+    window_ms,
+    step_ms,
+    channel_map=None,
+    channel_map_file=None,
+    modality="emg",
+    ignore_labels=None,
+):
     class_names = sorted(set(y))
     label_to_id = {c: i for i, c in enumerate(class_names)}
 
@@ -296,7 +327,8 @@ def save_dataset(save_path, X, y, metadata, window_ms, step_ms, channel_map=None
 
     np.savez(
         save_path,
-        X=X, y=y,
+        X=X,
+        y=y,
         fs=metadata["fs"],
         emg_fs=metadata["fs"],
         class_names=np.array(class_names, dtype=object),
@@ -309,9 +341,11 @@ def save_dataset(save_path, X, y, metadata, window_ms, step_ms, channel_map=None
         ignore_labels=np.array(ign, dtype=object),
         channel_mapping_name=np.array(channel_map or "", dtype=object),
         channel_mapping_file=np.array(channel_map_file or "", dtype=object),
-        modality=np.array(modality, dtype=object)
+        modality=np.array(modality, dtype=object),
     )
-    print(f"Saved dataset to {save_path} ({X.shape[0]} windows, {len(class_names)} classes)")
+    print(
+        f"Saved dataset to {save_path} ({X.shape[0]} windows, {len(class_names)} classes)"
+    )
 
 
 def load_dataset(path: str) -> tuple:
@@ -333,13 +367,78 @@ def load_dataset(path: str) -> tuple:
     """
     ds = np.load(path, allow_pickle=True)
     meta = {
-        "fs":                float(ds["fs"])               if "fs"               in ds.files else 200.0,
-        "window_ms":         int(ds["window_ms"])          if "window_ms"        in ds.files else 200,
-        "step_ms":           int(ds["step_ms"])            if "step_ms"          in ds.files else 50,
-        "envelope_cutoff_hz": float(ds["envelope_cutoff_hz"]) if "envelope_cutoff_hz" in ds.files else 5.0,
-        "channel_names":     ds["channel_names"].tolist()  if "channel_names"    in ds.files else None,
-        "selected_channels": ds["selected_channels"].tolist() if "selected_channels" in ds.files else None,
-        "feature_names":     ds["feature_names"].tolist()  if "feature_names"    in ds.files else None,
-        "ignore_labels":     ds["ignore_labels"].tolist()  if "ignore_labels"    in ds.files else [],
+        "fs": float(ds["fs"]) if "fs" in ds.files else 200.0,
+        "window_ms": int(ds["window_ms"]) if "window_ms" in ds.files else 200,
+        "step_ms": int(ds["step_ms"]) if "step_ms" in ds.files else 50,
+        "envelope_cutoff_hz": float(ds["envelope_cutoff_hz"])
+        if "envelope_cutoff_hz" in ds.files
+        else 5.0,
+        "channel_names": ds["channel_names"].tolist()
+        if "channel_names" in ds.files
+        else None,
+        "selected_channels": ds["selected_channels"].tolist()
+        if "selected_channels" in ds.files
+        else None,
+        "feature_names": ds["feature_names"].tolist()
+        if "feature_names" in ds.files
+        else None,
+        "ignore_labels": ds["ignore_labels"].tolist()
+        if "ignore_labels" in ds.files
+        else [],
     }
     return ds["X"], ds["y"], meta
+
+
+def save_session_to_mat(session: dict, output_path: str):
+    """
+    Save a full session dictionary (from load_open_ephys_session) to a .mat file.
+
+    Structure saved:
+      - amplifier_data: (n_channels, n_samples)
+      - t_amplifier: (n_samples,)
+      - sample_rate: scalar
+      - channel_names: cell array of strings
+      - events: struct with timestamps, channels, states (if present)
+    """
+    import scipy.io
+
+    # Prepare dictionary for savemat
+    # Ensure channel_names is a list of strings generic object for MATLAB cell array compat
+    ch_names = session.get("channel_names", [])
+    if ch_names:
+        ch_names = np.array(ch_names, dtype=object)
+
+    mat_dict = {
+        "amplifier_data": session["amplifier_data"],
+        "t_amplifier": session["t_amplifier"],
+        "sample_rate": session["sample_rate"],
+        "channel_names": ch_names,
+    }
+
+    if "events" in session and session["events"]:
+        mat_dict["events"] = session["events"]
+
+    scipy.io.savemat(output_path, mat_dict, do_compression=True)
+    print(f"Saved session to .mat: {output_path}")
+
+
+def save_session_to_npz(session: dict, output_path: str):
+    """
+    Save a full session dictionary (from load_open_ephys_session) to a .npz file.
+
+    This preserves the raw data structure (not the windowed dataset structure).
+    Keys: emg, timestamps, fs_hz, channel_names, events_{field}
+    """
+    save_dict = {
+        "emg": session["amplifier_data"],
+        "timestamps": session["t_amplifier"],
+        "fs_hz": session["sample_rate"],
+        "channel_names": session["channel_names"],
+    }
+
+    if "events" in session and session["events"]:
+        for k, v in session["events"].items():
+            save_dict[f"events_{k}"] = v
+
+    np.savez(output_path, **save_dict)
+    print(f"Saved session to .npz: {output_path}")
