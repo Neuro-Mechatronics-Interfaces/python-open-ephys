@@ -1,0 +1,30 @@
+{
+  "type": "ridge_output_calibration",
+  "base_model_dir": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\models\\sub-001\\eval_cnn_attention_001to005",
+  "base_model_kind": "cnn",
+  "alpha": 1.0,
+  "fit_samples": 24,
+  "val_samples": 96,
+  "base_mae": 5.7099480628967285,
+  "base_r2": -0.8084568381309509,
+  "adapted_mae": 6.071709632873535,
+  "adapted_r2": -1.4901225566864014,
+  "improvement_mae": -0.36176156997680664,
+  "improvement_r2": -0.6816657185554504,
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ]
+}

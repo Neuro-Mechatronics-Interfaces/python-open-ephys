@@ -1,0 +1,92 @@
+{
+  "datasets": [
+    {
+      "path": "data\\sub-001_finger5\\ses-001\\sub-001_ses-001_task-jointangles_wrist-neutral_finger5.npz",
+      "samples": 6090,
+      "emg_shape": [
+        6090,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6090,
+        5
+      ]
+    },
+    {
+      "path": "data\\sub-001_finger5\\ses-002\\sub-001_ses-002_task-jointangles_wrist-neutral_finger5.npz",
+      "samples": 6091,
+      "emg_shape": [
+        6091,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6091,
+        5
+      ]
+    },
+    {
+      "path": "data\\sub-001_finger5\\ses-003\\sub-001_ses-003_task-jointangles_wrist-neutral_finger5.npz",
+      "samples": 6050,
+      "emg_shape": [
+        6050,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6050,
+        5
+      ]
+    },
+    {
+      "path": "data\\sub-001_finger5\\ses-004\\sub-001_ses-004_task-jointangles_wrist-neutral_finger5.npz",
+      "samples": 6092,
+      "emg_shape": [
+        6092,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6092,
+        5
+      ]
+    },
+    {
+      "path": "data\\sub-001_finger5\\ses-005\\sub-001_ses-005_task-jointangles_wrist-neutral_finger5.npz",
+      "samples": 6091,
+      "emg_shape": [
+        6091,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6091,
+        5
+      ]
+    }
+  ],
+  "total_samples": 30414,
+  "emg_shape": [
+    30414,
+    8,
+    75,
+    1
+  ],
+  "angle_shape": [
+    30414,
+    5
+  ],
+  "final_loss": 124.29521179199219,
+  "final_val_loss": 166.0999298095703,
+  "final_mae": 7.956337928771973,
+  "feature_dim": 128,
+  "window_len": 75,
+  "angle_dim": 5,
+  "side": null
+}

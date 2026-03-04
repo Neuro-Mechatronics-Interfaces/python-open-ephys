@@ -1,0 +1,10 @@
+{
+  "model_dir": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\models\\sub-001\\eval_emd_001to005",
+  "npz": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\data\\sub-001\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral.npz",
+  "n": 120,
+  "feature_mode": "emd_stats",
+  "emg_transform": "log1p",
+  "emd_max_imfs": 3,
+  "mae": 9.605680465698242,
+  "r2": -5.193822860717773
+}

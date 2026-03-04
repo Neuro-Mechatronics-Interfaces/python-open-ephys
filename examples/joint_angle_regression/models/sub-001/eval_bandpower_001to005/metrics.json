@@ -1,0 +1,49 @@
+{
+  "mae": 11.848395347595215,
+  "r2": -0.27455174922943115,
+  "mae_cutoff": null,
+  "r2_cutoff": null,
+  "feature_extractor": null,
+  "feature_mode": "bandpower_stats",
+  "emg_feature_mode": "bandpower_stats",
+  "emg_transform": "log1p",
+  "emd_max_imfs": 3,
+  "angle_scaler": "minmax",
+  "data": [
+    "C:/Users/NML/Documents/Github/python-open-ephys/examples/joint_angle_regression/data/sub-001/ses-001/sub-001_ses-001_task-jointangles_wrist-neutral.npz",
+    "C:/Users/NML/Documents/Github/python-open-ephys/examples/joint_angle_regression/data/sub-001/ses-002/sub-001_ses-002_task-jointangles_wrist-neutral.npz",
+    "C:/Users/NML/Documents/Github/python-open-ephys/examples/joint_angle_regression/data/sub-001/ses-003/sub-001_ses-003_task-jointangles_wrist-neutral.npz",
+    "C:/Users/NML/Documents/Github/python-open-ephys/examples/joint_angle_regression/data/sub-001/ses-004/sub-001_ses-004_task-jointangles_wrist-neutral.npz",
+    "C:/Users/NML/Documents/Github/python-open-ephys/examples/joint_angle_regression/data/sub-001/ses-005/sub-001_ses-005_task-jointangles_wrist-neutral.npz"
+  ],
+  "imu_features": 18,
+  "imu_mode": "auto",
+  "target_spec": "full14",
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ],
+  "window_ms": 150.0,
+  "overlap_ms": 75.0,
+  "fs": 500.0,
+  "wrist_orientations": [
+    "neutral",
+    "neutral",
+    "neutral",
+    "neutral",
+    "neutral"
+  ],
+  "imu_included": true
+}

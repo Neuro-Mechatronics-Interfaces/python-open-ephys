@@ -1,0 +1,58 @@
+{
+  "model_type": "cnn_attention_regressor",
+  "arch": "baseline",
+  "paper_replication": false,
+  "input_mode": "raw",
+  "rms_subframes": 25,
+  "feature_mode": "cnn_attention",
+  "emg_feature_mode": "cnn_attention",
+  "emg_transform": "log1p",
+  "angle_scaler": "minmax",
+  "ms_kernels": [
+    3,
+    5,
+    7
+  ],
+  "attn_blocks": 3,
+  "attn_heads": 3,
+  "attn_key_dim": 64,
+  "attn_value_dim": 128,
+  "use_posenc": true,
+  "use_imu": true,
+  "imu_features": 18,
+  "train_data": [
+    "data/sub-001/ses-001/sub-001_ses-001_task-jointangles_wrist-neutral.npz",
+    "data/sub-001/ses-002/sub-001_ses-002_task-jointangles_wrist-neutral.npz",
+    "data/sub-001/ses-003/sub-001_ses-003_task-jointangles_wrist-neutral.npz",
+    "data/sub-001/ses-004/sub-001_ses-004_task-jointangles_wrist-neutral.npz",
+    "data/sub-001/ses-005/sub-001_ses-005_task-jointangles_wrist-neutral.npz"
+  ],
+  "test_data": [
+    "data/sub-001/ses-006/sub-001_ses-006_task-jointangles_wrist-neutral.npz"
+  ],
+  "n_train": 30414,
+  "n_test": 6084,
+  "window_len": 75,
+  "angle_dim": 14,
+  "mae_test": 9.528169631958008,
+  "r2_test": 0.01917053759098053,
+  "best_val_loss": 0.11392579972743988,
+  "final_train_loss": 0.09558732807636261,
+  "seed": 42,
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ]
+}

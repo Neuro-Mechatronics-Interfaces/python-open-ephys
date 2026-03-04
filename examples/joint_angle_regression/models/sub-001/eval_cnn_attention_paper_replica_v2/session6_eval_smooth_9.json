@@ -1,0 +1,18 @@
+{
+  "model_dir": "models\\sub-001\\eval_cnn_attention_paper_replica_v2",
+  "npz": "data\\sub-001\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral.npz",
+  "n": 6084,
+  "feature_mode": "cnn_attention",
+  "model_type": "cnn_attention_regressor",
+  "use_imu": false,
+  "emg_transform": "none",
+  "emd_max_imfs": 3,
+  "chunk_size": 6084,
+  "feature_cache": null,
+  "used_cache": false,
+  "personalization": null,
+  "smooth_samples": 9,
+  "elapsed_sec": 4.13676643371582,
+  "mae": 9.370634078979492,
+  "r2": 0.06536062061786652
+}

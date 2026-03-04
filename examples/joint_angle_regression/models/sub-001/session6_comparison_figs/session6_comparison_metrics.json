@@ -1,0 +1,89 @@
+{
+  "session6_npz": "data\\sub-001\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral.npz",
+  "full14": {
+    "mae": 10.641324043273926,
+    "r2": -0.21780763566493988,
+    "mae_per_joint": [
+      6.098644256591797,
+      6.449279308319092,
+      7.85470724105835,
+      14.263696670532227,
+      7.407458782196045,
+      9.414682388305664,
+      17.328182220458984,
+      8.815471649169922,
+      10.63835620880127,
+      17.58036994934082,
+      8.806794166564941,
+      10.344077110290527,
+      15.945804595947266,
+      8.031004905700684
+    ],
+    "angle_keys": [
+      "thumb_cmc_mcp",
+      "thumb_ip",
+      "index_mcp",
+      "index_pip",
+      "index_dip",
+      "middle_mcp",
+      "middle_pip",
+      "middle_dip",
+      "ring_mcp",
+      "ring_pip",
+      "ring_dip",
+      "pinky_mcp",
+      "pinky_pip",
+      "pinky_dip"
+    ]
+  },
+  "finger5": {
+    "mae": 9.926770210266113,
+    "r2": -0.4604989290237427,
+    "mae_per_joint": [
+      6.7702131271362305,
+      8.5869140625,
+      10.657574653625488,
+      12.0692720413208,
+      11.549878120422363
+    ],
+    "angle_keys": [
+      "thumb_cmc_mcp",
+      "index_mcp",
+      "middle_mcp",
+      "ring_mcp",
+      "pinky_mcp"
+    ]
+  },
+  "index_only": {
+    "mae": 11.244277000427246,
+    "r2": -0.5884612202644348,
+    "mae_per_joint": [
+      8.708346366882324,
+      16.502363204956055,
+      8.522122383117676
+    ],
+    "angle_keys": [
+      "index_mcp",
+      "index_pip",
+      "index_dip"
+    ]
+  },
+  "figures": {
+    "full14_timeseries": "models\\sub-001\\session6_comparison_figs\\session6_full14_timeseries.png",
+    "full14_timeseries_annotated": "models\\sub-001\\session6_comparison_figs\\session6_full14_timeseries_annotated.png",
+    "full14_error_trace": "models\\sub-001\\session6_comparison_figs\\session6_full14_error_trace.png",
+    "full14_error_trace_annotated": "models\\sub-001\\session6_comparison_figs\\session6_full14_error_trace_annotated.png",
+    "finger5_timeseries": "models\\sub-001\\session6_comparison_figs\\session6_finger5_timeseries.png",
+    "finger5_timeseries_annotated": "models\\sub-001\\session6_comparison_figs\\session6_finger5_timeseries_annotated.png",
+    "index_timeseries": "models\\sub-001\\session6_comparison_figs\\session6_index_timeseries.png",
+    "index_timeseries_annotated": "models\\sub-001\\session6_comparison_figs\\session6_index_timeseries_annotated.png",
+    "finger5_error_trace": "models\\sub-001\\session6_comparison_figs\\session6_finger5_error_trace.png",
+    "finger5_error_trace_annotated": "models\\sub-001\\session6_comparison_figs\\session6_finger5_error_trace_annotated.png",
+    "index_error_trace": "models\\sub-001\\session6_comparison_figs\\session6_index_error_trace.png",
+    "index_error_trace_annotated": "models\\sub-001\\session6_comparison_figs\\session6_index_error_trace_annotated.png",
+    "performance_summary": "models\\sub-001\\session6_comparison_figs\\session6_performance_summary.png",
+    "task_alignment_confidence": "models\\sub-001\\session6_comparison_figs\\session6_task_alignment_confidence.png"
+  },
+  "gesture_event_count": 33,
+  "gesture_segment_count": 33
+}

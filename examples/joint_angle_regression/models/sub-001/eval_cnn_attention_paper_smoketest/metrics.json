@@ -1,0 +1,52 @@
+{
+  "model_type": "cnn_attention_regressor",
+  "arch": "paper_msattn",
+  "feature_mode": "cnn_attention",
+  "emg_feature_mode": "cnn_attention",
+  "emg_transform": "log1p",
+  "angle_scaler": "minmax",
+  "ms_kernels": [
+    3,
+    5,
+    7
+  ],
+  "attn_blocks": 3,
+  "attn_heads": 3,
+  "attn_key_dim": 64,
+  "attn_value_dim": 128,
+  "use_posenc": true,
+  "use_imu": true,
+  "imu_features": 18,
+  "train_data": [
+    "data/sub-001/ses-001/sub-001_ses-001_task-jointangles_wrist-neutral.npz",
+    "data/sub-001/ses-002/sub-001_ses-002_task-jointangles_wrist-neutral.npz"
+  ],
+  "test_data": [
+    "data/sub-001/ses-006/sub-001_ses-006_task-jointangles_wrist-neutral.npz"
+  ],
+  "n_train": 2000,
+  "n_test": 800,
+  "window_len": 75,
+  "angle_dim": 14,
+  "mae_test": 7.266343116760254,
+  "r2_test": -0.9788340926170349,
+  "best_val_loss": 0.09717709571123123,
+  "final_train_loss": 0.31859666109085083,
+  "seed": 42,
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ]
+}

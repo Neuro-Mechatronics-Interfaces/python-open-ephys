@@ -1,0 +1,72 @@
+{
+  "models": {
+    "full14": {
+      "sessions": [
+        "ses-001",
+        "ses-002",
+        "ses-003",
+        "ses-004",
+        "ses-005",
+        "ses-006"
+      ],
+      "pooled_heldout_mae": 9.880706787109375,
+      "pooled_heldout_r2": 0.09541160613298416,
+      "mae_ci95": [
+        9.803067636489867,
+        9.95617036819458
+      ]
+    },
+    "finger5": {
+      "sessions": [
+        "ses-001",
+        "ses-002",
+        "ses-003",
+        "ses-004",
+        "ses-005",
+        "ses-006"
+      ],
+      "pooled_heldout_mae": 8.534138679504395,
+      "pooled_heldout_r2": 0.04557479918003082,
+      "mae_ci95": [
+        8.457383036613464,
+        8.609063577651977
+      ]
+    },
+    "index_only": {
+      "sessions": [
+        "ses-001",
+        "ses-002",
+        "ses-003",
+        "ses-004",
+        "ses-005",
+        "ses-006"
+      ],
+      "pooled_heldout_mae": 9.74264907836914,
+      "pooled_heldout_r2": 0.008706348016858101,
+      "mae_ci95": [
+        9.650560593605041,
+        9.839850664138794
+      ]
+    }
+  },
+  "significance": [
+    {
+      "model_a": "full14",
+      "model_b": "finger5",
+      "delta_mae_a_minus_b": 1.3465687036514282,
+      "paired_permutation_p": 0.0004997501249375312
+    },
+    {
+      "model_a": "full14",
+      "model_b": "index_only",
+      "delta_mae_a_minus_b": 0.13809248805046082,
+      "paired_permutation_p": 0.0004997501249375312
+    },
+    {
+      "model_a": "finger5",
+      "model_b": "index_only",
+      "delta_mae_a_minus_b": -1.2084760665893555,
+      "paired_permutation_p": 0.0004997501249375312
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "test_file": "data\\sub-001_index_only\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral_index-only.npz",
+  "n_samples": 6084,
+  "mae": 11.244277000427246,
+  "r2": -0.5884612202644348,
+  "mae_per_joint": [
+    8.708346366882324,
+    16.502363204956055,
+    8.522122383117676
+  ]
+}

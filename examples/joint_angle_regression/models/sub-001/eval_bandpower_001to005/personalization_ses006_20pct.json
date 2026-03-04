@@ -1,0 +1,29 @@
+{
+  "type": "ridge_output_calibration",
+  "base_model_dir": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\models\\sub-001\\eval_bandpower_001to005",
+  "alpha": 1.0,
+  "fit_samples": 1216,
+  "val_samples": 4868,
+  "base_mae": 11.65229320526123,
+  "base_r2": -0.36436858773231506,
+  "adapted_mae": 9.745165824890137,
+  "adapted_r2": 0.01458238996565342,
+  "improvement_mae": 1.9071273803710938,
+  "improvement_r2": 0.3789509776979685,
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ]
+}

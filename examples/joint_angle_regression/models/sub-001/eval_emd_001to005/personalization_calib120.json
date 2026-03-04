@@ -1,0 +1,29 @@
+{
+  "type": "ridge_output_calibration",
+  "base_model_dir": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\models\\sub-001\\eval_emd_001to005",
+  "alpha": 1.0,
+  "fit_samples": 24,
+  "val_samples": 96,
+  "base_mae": 9.469094276428223,
+  "base_r2": -5.056548595428467,
+  "adapted_mae": 6.6579694747924805,
+  "adapted_r2": -2.0050852298736572,
+  "improvement_mae": 2.811124801635742,
+  "improvement_r2": 3.0514633655548096,
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "thumb_ip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip"
+  ]
+}

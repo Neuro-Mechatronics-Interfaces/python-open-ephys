@@ -1,0 +1,41 @@
+{
+  "model_type": "cnn_attention_regressor",
+  "arch": "paper_msattn",
+  "paper_replication": true,
+  "input_mode": "rms_subframes",
+  "rms_subframes": 25,
+  "feature_mode": "cnn_attention",
+  "emg_feature_mode": "cnn_attention",
+  "emg_transform": "none",
+  "angle_scaler": "minmax",
+  "ms_kernels": [
+    3,
+    5,
+    7
+  ],
+  "attn_blocks": 3,
+  "attn_heads": 3,
+  "attn_key_dim": 64,
+  "attn_value_dim": 128,
+  "use_posenc": true,
+  "use_imu": false,
+  "imu_features": 0,
+  "train_data": [
+    "data/ninapro_db2/processed_npz\\sub-006_task-exerciseE1_train.npz",
+    "data/ninapro_db2/processed_npz\\sub-006_task-exerciseE2_train.npz"
+  ],
+  "test_data": [
+    "data/ninapro_db2/processed_npz\\sub-006_task-exerciseE1_test.npz",
+    "data/ninapro_db2/processed_npz\\sub-006_task-exerciseE2_test.npz"
+  ],
+  "n_train": 17629,
+  "n_test": 8811,
+  "window_len": 25,
+  "angle_dim": 22,
+  "mae_test": 17.866464614868164,
+  "r2_test": 0.5389496684074402,
+  "best_val_loss": 0.09290296584367752,
+  "final_train_loss": 0.03811271861195564,
+  "seed": 42,
+  "angle_keys": null
+}

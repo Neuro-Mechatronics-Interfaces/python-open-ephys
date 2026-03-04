@@ -1,0 +1,39 @@
+{
+  "mae": 9.577629089355469,
+  "r2": -0.10152676701545715,
+  "mae_cutoff": null,
+  "r2_cutoff": null,
+  "feature_extractor": "models/sub-001/finger5_ses-001to005_feature_extractor.h5",
+  "feature_mode": "extractor",
+  "emg_feature_mode": "extractor",
+  "emg_transform": "none",
+  "angle_scaler": "minmax",
+  "data": [
+    "data/sub-001_finger5/ses-001/sub-001_ses-001_task-jointangles_wrist-neutral_finger5.npz",
+    "data/sub-001_finger5/ses-002/sub-001_ses-002_task-jointangles_wrist-neutral_finger5.npz",
+    "data/sub-001_finger5/ses-003/sub-001_ses-003_task-jointangles_wrist-neutral_finger5.npz",
+    "data/sub-001_finger5/ses-004/sub-001_ses-004_task-jointangles_wrist-neutral_finger5.npz",
+    "data/sub-001_finger5/ses-005/sub-001_ses-005_task-jointangles_wrist-neutral_finger5.npz"
+  ],
+  "imu_features": 0,
+  "imu_mode": "off",
+  "target_spec": "finger5",
+  "angle_keys": [
+    "thumb_cmc_mcp",
+    "index_mcp",
+    "middle_mcp",
+    "ring_mcp",
+    "pinky_mcp"
+  ],
+  "window_ms": 150.0,
+  "overlap_ms": 75.0,
+  "fs": 500.0,
+  "wrist_orientations": [
+    "neutral",
+    "neutral",
+    "neutral",
+    "neutral",
+    "neutral"
+  ],
+  "imu_included": false
+}

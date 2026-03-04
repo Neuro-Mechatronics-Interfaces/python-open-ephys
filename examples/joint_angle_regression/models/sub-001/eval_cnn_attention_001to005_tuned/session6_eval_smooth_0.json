@@ -1,0 +1,18 @@
+{
+  "model_dir": "models\\sub-001\\eval_cnn_attention_001to005_tuned",
+  "npz": "data\\sub-001\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral.npz",
+  "n": 6084,
+  "feature_mode": "cnn_attention",
+  "model_type": "cnn_attention_regressor",
+  "use_imu": true,
+  "emg_transform": "log1p",
+  "emd_max_imfs": 3,
+  "chunk_size": 6084,
+  "feature_cache": null,
+  "used_cache": false,
+  "personalization": null,
+  "smooth_samples": 0,
+  "elapsed_sec": 3.0129711627960205,
+  "mae": 9.718026161193848,
+  "r2": 0.055285122245550156
+}

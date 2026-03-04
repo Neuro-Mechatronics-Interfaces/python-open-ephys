@@ -1,0 +1,92 @@
+{
+  "datasets": [
+    {
+      "path": "data\\sub-001_index_only\\ses-001\\sub-001_ses-001_task-jointangles_wrist-neutral_index-only.npz",
+      "samples": 6090,
+      "emg_shape": [
+        6090,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6090,
+        3
+      ]
+    },
+    {
+      "path": "data\\sub-001_index_only\\ses-002\\sub-001_ses-002_task-jointangles_wrist-neutral_index-only.npz",
+      "samples": 6091,
+      "emg_shape": [
+        6091,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6091,
+        3
+      ]
+    },
+    {
+      "path": "data\\sub-001_index_only\\ses-003\\sub-001_ses-003_task-jointangles_wrist-neutral_index-only.npz",
+      "samples": 6050,
+      "emg_shape": [
+        6050,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6050,
+        3
+      ]
+    },
+    {
+      "path": "data\\sub-001_index_only\\ses-004\\sub-001_ses-004_task-jointangles_wrist-neutral_index-only.npz",
+      "samples": 6092,
+      "emg_shape": [
+        6092,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6092,
+        3
+      ]
+    },
+    {
+      "path": "data\\sub-001_index_only\\ses-005\\sub-001_ses-005_task-jointangles_wrist-neutral_index-only.npz",
+      "samples": 6091,
+      "emg_shape": [
+        6091,
+        8,
+        75,
+        1
+      ],
+      "angle_shape": [
+        6091,
+        3
+      ]
+    }
+  ],
+  "total_samples": 30414,
+  "emg_shape": [
+    30414,
+    8,
+    75,
+    1
+  ],
+  "angle_shape": [
+    30414,
+    3
+  ],
+  "final_loss": 185.01901245117188,
+  "final_val_loss": 229.09109497070312,
+  "final_mae": 9.203067779541016,
+  "feature_dim": 128,
+  "window_len": 75,
+  "angle_dim": 3,
+  "side": null
+}

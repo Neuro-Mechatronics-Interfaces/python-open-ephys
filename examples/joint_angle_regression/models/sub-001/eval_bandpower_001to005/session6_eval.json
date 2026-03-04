@@ -1,0 +1,10 @@
+{
+  "model_dir": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\models\\sub-001\\eval_bandpower_001to005",
+  "npz": "C:\\Users\\NML\\Documents\\Github\\python-open-ephys\\examples\\joint_angle_regression\\data\\sub-001\\ses-006\\sub-001_ses-006_task-jointangles_wrist-neutral.npz",
+  "n": 6084,
+  "feature_mode": "bandpower_stats",
+  "emg_transform": "log1p",
+  "emd_max_imfs": 3,
+  "mae": 11.711418151855469,
+  "r2": -0.39403337240219116
+}
