@@ -1,6 +1,7 @@
 import argparse
 import re
 import time
+from collections import deque
 
 import numpy as np
 
@@ -147,6 +148,17 @@ class OpenEphysLSLStreamer:
         self._header_fs = 0.0  # from ZMQ header field
         self._measured_fs = 0  # empirical throughput
         self._prev_idx = 0  # track global_sample_index (per-channel)
+        self._rate_points = deque()
+        self._rate_window_s = 1.0
+        self._display_rate_hz = 0.0
+        self._ingest_points = deque()
+        self._ingest_window_s = 2.0
+        self._ingest_rate_hz = 0.0
+        self._sample_time_anchor_idx = 0
+        self._sample_time_anchor_lsl = 0.0
+        self._pending_emg = None
+        self._pending_adc = None
+        self._pending_ts = np.empty((0,), dtype=np.float64)
 
     @staticmethod
     def _round_fs(raw: float) -> float:
@@ -312,7 +324,7 @@ class OpenEphysLSLStreamer:
         # chip rate of 30/40 kHz instead of the software-decimated rate).
         header_fs = float(self.client.fs)
         self._header_fs = header_fs
-        self._measured_fs = round(measured_fs)
+        self._measured_fs = self._round_fs(measured_fs) if measured_fs > 100 else round(measured_fs)
 
         if self.expected_fs > 0:
             # User explicitly chose a rate – honour it.
@@ -348,6 +360,13 @@ class OpenEphysLSLStreamer:
         # Sync drain cursor to global_sample_index (per-channel header index)
         with self.client._lock:
             self._prev_idx = int(self.client.global_sample_index)
+        self._sample_time_anchor_idx = self._prev_idx
+        self._sample_time_anchor_lsl = _now()
+        self._ingest_points.clear()
+        self._ingest_points.append((self._sample_time_anchor_lsl, self._prev_idx))
+        self._pending_emg = np.empty((0, len(self.emg_ch_idx)), dtype=np.float32)
+        self._pending_adc = np.empty((0, len(self.adc_ch_idx)), dtype=np.float32)
+        self._pending_ts = np.empty((0,), dtype=np.float64)
 
         self.running = True
         self.last_poll = _now()
@@ -355,6 +374,10 @@ class OpenEphysLSLStreamer:
 
     def stop(self):
         self.running = False
+        try:
+            self._push_pending_chunks(force=True)
+        except Exception:
+            pass
         if self.client is not None:
             try:
                 self.client.stop()
@@ -365,11 +388,53 @@ class OpenEphysLSLStreamer:
         self.emg_outlet = None
         self.adc_outlet = None
 
+    def _push_pending_chunks(self, force=False):
+        if self._pending_ts is None or self._pending_ts.size == 0:
+            return 0, 0
+
+        emitted = 0
+        last_chunk = 0
+        chunk_n = max(int(self.chunk_size), 1)
+
+        while self._pending_ts.size >= chunk_n or (force and self._pending_ts.size > 0):
+            take = chunk_n if self._pending_ts.size >= chunk_n else int(self._pending_ts.size)
+            emg_chunk = self._pending_emg[:take]
+            adc_chunk = self._pending_adc[:take]
+            ts_chunk = self._pending_ts[:take].tolist()
+
+            if emg_chunk.shape[1] > 0 and self.emg_outlet is not None:
+                self.emg_outlet.push_chunk(emg_chunk.tolist(), ts_chunk)
+            if adc_chunk.shape[1] > 0 and self.adc_outlet is not None:
+                self.adc_outlet.push_chunk(adc_chunk.tolist(), ts_chunk)
+
+            self.total_emg += take
+            if adc_chunk.shape[1] > 0:
+                self.total_adc += take
+            self.last_chunk = take
+            self.last_poll = _now()
+            if emg_chunk.shape[1] > 0:
+                self.last_emg_rms = float(np.sqrt(np.mean(emg_chunk * emg_chunk)))
+                self.last_emg_std = float(np.std(emg_chunk))
+            if ts_chunk:
+                self._rate_points.append((float(ts_chunk[-1]), int(self.total_emg)))
+
+            self._pending_emg = self._pending_emg[take:]
+            self._pending_adc = self._pending_adc[take:]
+            self._pending_ts = self._pending_ts[take:]
+            emitted += take
+            last_chunk = take
+
+        return emitted, last_chunk
+
     def poll_once(self):
         info = {
             "running": self.running,
-            "rate_hz": 0.0,
+            "rate_hz": self._display_rate_hz,
+            "ingest_rate_hz": self._ingest_rate_hz,
+            "nominal_rate_hz": self.detected_fs if self.detected_fs > 0 else self.expected_fs,
             "chunk": 0,
+            "ingest_chunk": 0,
+            "pending_chunk": int(self._pending_ts.size) if self._pending_ts is not None else 0,
             "channels": self.emg_channels,
             "n_adc": self.n_adc,
             "total_emg": self.total_emg,
@@ -382,9 +447,6 @@ class OpenEphysLSLStreamer:
             return info
 
         now = _now()
-        dt = max(now - self.last_poll, 1e-6)
-        self.last_poll = now
-        info["rate_hz"] = 1.0 / dt
 
         n_emg = len(self.emg_ch_idx)
         n_adc = len(self.adc_ch_idx)
@@ -395,9 +457,11 @@ class OpenEphysLSLStreamer:
             n_new = cur_idx - self._prev_idx
             if n_new <= 0:
                 return info
+            chunk_start_idx = self._prev_idx
             max_buf = self.client._deque_len
             if n_new > max_buf:
                 n_new = max_buf
+                chunk_start_idx = cur_idx - n_new
 
             # Helper to read tails from a set of channel deques
             def _read_channels(ch_list):
@@ -423,6 +487,7 @@ class OpenEphysLSLStreamer:
         emg = emg_arr.T  # (n_new, n_emg)
         adc = adc_arr.T  # (n_new, n_adc)
         n_samples = emg.shape[0]
+        info["ingest_chunk"] = n_samples
         info["channels"] = n_emg
         info["emg_shape"] = emg.shape  # (n_samples, n_emg)
         info["adc_shape"] = adc.shape  # (n_samples, n_adc)
@@ -431,27 +496,58 @@ class OpenEphysLSLStreamer:
             return info
 
         fs = self.detected_fs if self.detected_fs > 0 else self.expected_fs
-        ts_end = _now()
-        ts = ts_end - (np.arange(n_samples, dtype=np.float64)[::-1] / fs)
-        ts_list = ts.tolist()
+        sample_idx = chunk_start_idx + np.arange(n_samples, dtype=np.float64)
+        ts = self._sample_time_anchor_lsl + (
+            (sample_idx - float(self._sample_time_anchor_idx)) / max(fs, 1e-6)
+        )
+        if self._pending_emg is None:
+            self._pending_emg = np.empty((0, n_emg), dtype=np.float32)
+        if self._pending_adc is None:
+            self._pending_adc = np.empty((0, n_adc), dtype=np.float32)
 
-        # ---- Push to LSL ----
-        if n_emg > 0 and self.emg_outlet is not None:
-            self.emg_outlet.push_chunk(emg.tolist(), ts_list)
-        if n_adc > 0 and self.adc_outlet is not None:
-            self.adc_outlet.push_chunk(adc.tolist(), ts_list)
+        self._pending_emg = np.vstack((self._pending_emg, emg))
+        self._pending_adc = np.vstack((self._pending_adc, adc))
+        self._pending_ts = np.concatenate((self._pending_ts, ts))
 
-        self.total_emg += n_samples
-        if n_adc > 0:
-            self.total_adc += n_samples
-        self.last_chunk = n_samples
-        if n_emg > 0:
-            self.last_emg_rms = float(np.sqrt(np.mean(emg * emg)))
-            self.last_emg_std = float(np.std(emg))
+        _, emitted_chunk = self._push_pending_chunks(force=False)
+        info["pending_chunk"] = int(self._pending_ts.size)
+
+        self._ingest_points.append((float(now), int(cur_idx)))
+        ingest_cutoff = float(now) - self._ingest_window_s
+        while len(self._ingest_points) >= 2 and self._ingest_points[0][0] < ingest_cutoff:
+            self._ingest_points.popleft()
+
+        if len(self._ingest_points) >= 2:
+            t0i, s0i = self._ingest_points[0]
+            t1i, s1i = self._ingest_points[-1]
+            span_i = max(t1i - t0i, 1e-6)
+            self._ingest_rate_hz = (s1i - s0i) / span_i
+
+        latest_ts = (
+            float(self._pending_ts[-1])
+            if self._pending_ts.size > 0
+            else (float(ts[-1]) if ts.size > 0 else now)
+        )
+        cutoff = latest_ts - self._rate_window_s
+        while len(self._rate_points) >= 2 and self._rate_points[0][0] < cutoff:
+            self._rate_points.popleft()
+
+        if len(self._rate_points) >= 2:
+            t0, s0 = self._rate_points[0]
+            t1, s1 = self._rate_points[-1]
+            span = max(t1 - t0, 1e-6)
+            self._display_rate_hz = (s1 - s0) / span
+        elif self._rate_points:
+            self._display_rate_hz = 0.0
 
         info.update(
             {
-                "chunk": n_samples,
+                "rate_hz": self._display_rate_hz,
+                "ingest_rate_hz": self._ingest_rate_hz,
+                "nominal_rate_hz": fs,
+                "chunk": emitted_chunk,
+                "ingest_chunk": n_samples,
+                "pending_chunk": int(self._pending_ts.size),
                 "total_emg": self.total_emg,
                 "total_adc": self.total_adc,
                 "emg_rms": self.last_emg_rms,
@@ -518,6 +614,8 @@ class StreamerWindow(QMainWindow):
         self.args = args
         self.streamer = None
         self.last_retry = 0.0
+        self.last_ui_update = 0.0
+        self.ui_update_interval = 0.25
         self._init_ui()
         self.setStyleSheet(_DARK_STYLE)
 
@@ -528,7 +626,7 @@ class StreamerWindow(QMainWindow):
     # ---- UI ----------------------------------------------------------------
     def _init_ui(self):
         self.setWindowTitle("Open Ephys  \u2192  LSL Streamer")
-        self.setMinimumSize(460, 420)
+        self.setMinimumSize(460, 440)
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -555,23 +653,31 @@ class StreamerWindow(QMainWindow):
         self.ch_edit = QSpinBox()
         self.ch_edit.setRange(0, 256)
         self.ch_edit.setSpecialValueText("Auto")
-        # Default to 128 if args.channels is 0 (Auto)
-        self.ch_edit.setValue(self.args.channels if self.args.channels > 0 else 128)
+        self.ch_edit.setValue(self.args.channels)
         cg.addWidget(self.ch_edit, 1, 1)
 
         cg.addWidget(QLabel("Fs (Hz)"), 1, 2)
         self.fs_edit = QSpinBox()
         self.fs_edit.setRange(0, 100000)
         self.fs_edit.setSpecialValueText("Auto")
-        # Default to 1000 if args.fs is 0 (Auto)
-        self.fs_edit.setValue(int(self.args.fs) if self.args.fs > 0 else 1000)
+        self.fs_edit.setValue(int(self.args.fs))
         self.fs_edit.setFixedWidth(80)
         cg.addWidget(self.fs_edit, 1, 3)
 
-        self.sync_checkbox = QCheckBox("From Header")
-        self.sync_checkbox.setToolTip("Update Channels/Fs from detected stream header")
+        self.sync_checkbox = QCheckBox("Auto-detect from stream")
+        self.sync_checkbox.setToolTip(
+            "Ignore manual Channels/Fs values and use the detected stream configuration"
+        )
         self.sync_checkbox.setChecked(True)
         cg.addWidget(self.sync_checkbox, 2, 0, 1, 2)
+
+        cg.addWidget(QLabel("Chunk size"), 2, 2)
+        self.chunk_edit = QSpinBox()
+        self.chunk_edit.setRange(1, 8192)
+        self.chunk_edit.setSingleStep(16)
+        self.chunk_edit.setValue(int(self.args.chunk_size))
+        self.chunk_edit.setToolTip("Number of samples to emit per LSL chunk")
+        cg.addWidget(self.chunk_edit, 2, 3)
 
         layout.addWidget(conn_group)
 
@@ -598,16 +704,12 @@ class StreamerWindow(QMainWindow):
         self.status = QLabel("Disconnected")
         self.status.setStyleSheet("color: #ff6666; font-weight: bold; font-size: 14px;")
         self.ch_info = QLabel("Channels: EMG=0  ADC=0")
-        self.emg_shape = QLabel("EMG: —")
-        self.adc_shape = QLabel("ADC: —")
-        self.emg_stats = QLabel("EMG RMS: N/A  |  \u03c3: N/A")
-        self.rate = QLabel("Rate: N/A")
+        self.emg_shape = QLabel("EMG total: —  |  output chunk: —")
+        self.rate = QLabel("Output fs: N/A  |  Input fs: N/A")
 
         sl.addWidget(self.status)
         sl.addWidget(self.ch_info)
         sl.addWidget(self.emg_shape)
-        sl.addWidget(self.adc_shape)
-        sl.addWidget(self.emg_stats)
         sl.addWidget(self.rate)
         layout.addWidget(stat_group)
 
@@ -640,8 +742,13 @@ class StreamerWindow(QMainWindow):
         """Create a fresh OpenEphysLSLStreamer from current widget values."""
         host = self.host_edit.text().strip() or self.args.host
         port = self.port_edit.value()
-        channels = self.ch_edit.value()
-        fs = float(self.fs_edit.value())
+        if self.sync_checkbox.isChecked():
+            channels = 0
+            fs = 0.0
+        else:
+            channels = self.ch_edit.value()
+            fs = float(self.fs_edit.value())
+        chunk_size = int(self.chunk_edit.value())
         emg_name = self.emg_name.text().strip() or self.args.emg_stream_name
         adc_name = self.adc_name.text().strip() or self.args.adc_stream_name
         return OpenEphysLSLStreamer(
@@ -651,7 +758,7 @@ class StreamerWindow(QMainWindow):
             emg_channels=channels,
             emg_stream_name=emg_name,
             adc_stream_name=adc_name,
-            chunk_size=self.args.chunk_size,
+            chunk_size=chunk_size,
         )
 
     def _on_start(self):
@@ -695,6 +802,7 @@ class StreamerWindow(QMainWindow):
             f"ADC={n_adc}{' (' + ', '.join(self.streamer.adc_labels) + ')' if n_adc else ''}"
         )
         self.reminder.hide()
+        self.last_ui_update = 0.0
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self._set_config_enabled(False)
@@ -705,6 +813,9 @@ class StreamerWindow(QMainWindow):
         self.streamer = None
         self.status.setText("Disconnected")
         self.status.setStyleSheet("color: #ff6666; font-weight: bold; font-size: 14px;")
+        self.ch_info.setText("Channels: EMG=0  ADC=0")
+        self.emg_shape.setText("EMG total: —  |  output chunk: —")
+        self.rate.setText("Output fs: N/A  |  Input fs: N/A")
         self.reminder.show()
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -716,6 +827,7 @@ class StreamerWindow(QMainWindow):
             self.port_edit,
             self.ch_edit,
             self.fs_edit,
+            self.chunk_edit,
             self.emg_name,
             self.adc_name,
             self.sync_checkbox,
@@ -735,38 +847,23 @@ class StreamerWindow(QMainWindow):
 
         try:
             info = self.streamer.poll_once()
-            fs_str = (
-                f"{self.streamer.detected_fs:.0f}"
-                if self.streamer.detected_fs > 0
-                else "?"
-            )
-            hdr = (
-                f"{self.streamer._header_fs:.0f}"
-                if self.streamer._header_fs > 0
-                else "?"
-            )
-            meas = (
-                f"{self.streamer._measured_fs}"
-                if self.streamer._measured_fs > 0
-                else "?"
-            )
-            eshape = info.get("emg_shape", (0, 0))
-            ashape = info.get("adc_shape", (0, 0))
-            self.emg_shape.setText(
-                f"EMG: {info['total_emg']:,} samples  |  chunk {eshape}  @ {fs_str} Hz"
-            )
-            self.adc_shape.setText(
-                f"ADC: {info.get('total_adc', 0):,} samples  |  chunk {ashape}"
-                if ashape[1] > 0
-                else "ADC: none"
-            )
-            self.rate.setText(
-                f"Rate: {info['rate_hz']:.1f} Hz  |  fs: header={hdr}  measured={meas}"
-            )
-            if info["chunk"] > 0:
-                self.emg_stats.setText(
-                    f"EMG RMS: {info['emg_rms']:.3f}  |  \u03c3: {info['emg_std']:.3f}"
+            now = time.time()
+            if (now - self.last_ui_update) >= self.ui_update_interval:
+                emitted_chunk = int(info.get("chunk", 0))
+                ingest_chunk = int(info.get("ingest_chunk", 0))
+                pending_chunk = int(info.get("pending_chunk", 0))
+                output_chunk_text = (
+                    f"{emitted_chunk} samples"
+                    if emitted_chunk > 0
+                    else "waiting"
                 )
+                self.emg_shape.setText(
+                    f"EMG total: {info['total_emg']:,} samples  |  output chunk: {output_chunk_text}  |  ingest: {ingest_chunk}  |  queued: {pending_chunk}"
+                )
+                self.rate.setText(
+                    f"Output fs: {info.get('nominal_rate_hz', 0):.1f} Hz  |  Input fs: {info.get('ingest_rate_hz', 0):.1f} Hz"
+                )
+                self.last_ui_update = now
         except Exception as exc:
             self.status.setText(f"Error: {exc}")
             self.status.setStyleSheet(
