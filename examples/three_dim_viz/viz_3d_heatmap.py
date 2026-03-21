@@ -20,6 +20,8 @@ import pyvista as pv
 from matplotlib.colors import LinearSegmentedColormap
 from pyvistaqt import BackgroundPlotter
 from pyoephys.interface import ZMQClient, NotReadyError
+from PyQt5 import QtWidgets
+from PyQt5 import QtCore
 
 
 def load_sensor_config(path: str) -> dict:
@@ -36,13 +38,15 @@ def compute_rbf_weights(mesh_points, sensor_points, sigma, radius):
 
     Returns: (weights, in_range_mask)
     """
-    dists = cdist(mesh_points, sensor_points)
-    in_range = dists.min(axis=1) <= radius
+    dists = cdist(mesh_points, sensor_points) # calculate distances between mesh points and sensors, yields n_mesh by n_sensors sized array
+    in_range = dists.min(axis=1) <= radius # array of booleans of size n_mesh corresponding to which mesh verticies are within range of at least one sensor
 
-    weights = np.exp(-0.5 * (dists / sigma) ** 2)
-    weights[dists > radius] = 0.0
+    weights = np.exp(-0.5 * (dists / sigma) ** 2) # pass distance through gaussian function to yield weights for interpolation
+    weights[dists > radius] = 0.0 # zero out wights for out of range verticies using 2d bool mask
+    
+    #sum of weights for each vertex so we can get wieghted average that isn't affected by how close the point is to many sensors
     row_sums = weights.sum(axis=1, keepdims=True)
-    row_sums[row_sums < 1e-30] = 1.0
+    row_sums[row_sums == 0.0] = 1.0 # prevent division by zero for out of range values
     weights /= row_sums
 
     print(f"RBF weights ready. {in_range.sum()} / {len(mesh_points)} vertices in range.")
@@ -96,11 +100,6 @@ def build_scene(plotter, model_path, sensor_positions, sigma, radius, clim):
 
     return mesh, channels, sensor_pts, weights, in_range
 
-
-def compute_rms(Y: np.ndarray) -> np.ndarray:
-    return np.sqrt(np.mean(Y ** 2, axis=1))
-
-
 def main():
     parser = argparse.ArgumentParser(description="3D EMG Surface Heatmap Viewer")
     parser.add_argument("--model", type=str, default="./models/forearm.stl",
@@ -143,6 +142,7 @@ def main():
     print(f"ZMQ client started, connecting to {args.host}:{args.port} ...")
 
     # --- PyVista scene ---
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     plotter = BackgroundPlotter(title="EMG 3D Heatmap", window_size=(1200, 800))
     plotter.set_background("white")
     plotter.add_axes()
@@ -184,7 +184,7 @@ def main():
             return
         last_sample_idx[0] = current_idx
 
-        rms = compute_rms(Y)
+        rms = np.sqrt(np.mean(Y ** 2, axis=1))
 
         sensor_values = np.zeros(n_sensors, dtype=np.float64)
         for i, ch in enumerate(channels):
@@ -193,21 +193,45 @@ def main():
 
         # Interpolate in-range vertices, out-of-range stays at clim_min (white)
         vertex_scalars = np.full(mesh.n_points, clim[0], dtype=np.float64)
-        vertex_scalars[in_range] = (rbf_weights[in_range] @ sensor_values)
+        vertex_scalars[in_range] = (rbf_weights[in_range] @ sensor_values) # use boolean mask to avoid calculating amplitude values for mesh verticies that are out of range.
 
         mesh["amplitude"] = vertex_scalars
         mesh.Modified()
         plotter.render()
         print(f"[update] rms: {sensor_values.round(1)}")
 
-    plotter.add_callback(update, interval=args.update_ms)
+    timer = QtCore.QTimer()
+    timer.timeout.connect(update)
+    timer.start(args.update_ms)
+    
+    print("\n3D viewer is running. Close the window to stop.\n")
 
-    print("\n3D viewer is running. Close the window or Ctrl+C to stop.\n")
+    ################### UI Controls ############################
+    
+    # 1. Create a container widget for your controls
+    container = QtWidgets.QWidget()
+    layout = QtWidgets.QVBoxLayout()
+
+ 
+    btn = QtWidgets.QPushButton("Toggle Edges")
+    def toggle():
+        print("Toggling edges...")
+
+    btn.clicked.connect(toggle)
+    layout.addWidget(btn)
+    container.setLayout(layout)
+
+    # 3. Add the container to the plotter as a Dock
+    dock = QtWidgets.QDockWidget("Display Settings")
+    dock.setWidget(container)
+    plotter.app_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+
+     ###########################################################
+
     plotter.app.exec_()
 
     client.stop()
     print("Done.")
-
 
 if __name__ == "__main__":
     main()
