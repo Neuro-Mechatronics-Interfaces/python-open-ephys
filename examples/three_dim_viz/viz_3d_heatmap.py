@@ -22,6 +22,8 @@ from pyvistaqt import BackgroundPlotter
 from pyoephys.interface import ZMQClient, NotReadyError
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
+import os
+from pathlib import Path
 
 
 def load_sensor_config(path: str) -> dict:
@@ -52,41 +54,68 @@ def compute_rbf_weights(mesh_points, sensor_points, sigma, radius):
     print(f"RBF weights ready. {in_range.sum()} / {len(mesh_points)} vertices in range.")
     return weights, in_range
 
+# def build_mesh(viz_params, meshes):
 
-def build_scene(plotter, model_path, sensor_positions, sigma, radius, clim):
-    if model_path:
-        try:
-            mesh = pv.read(model_path)
-        except Exception as e:
-            raise ValueError(f"Error reading model file: {e}")
- 
-    mesh = mesh.extract_surface(algorithm=None).triangulate()
 
+def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius):
+    mesh_pts = np.array([])
+    meshes = []
+    mesh_names = []
+    mesh_intervals = []
+    vertex_index_start = 0
+    vertex_index_end = 0
+    
     channels = sorted(sensor_positions.keys())
     sensor_pts = np.array([sensor_positions[ch] for ch in channels], dtype=np.float64)
 
-    mesh_pts = np.array(mesh.points, dtype=np.float64)
-    weights, in_range = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
+    if model_path:
+        try:
+            directory_path = Path(model_path)  # Path to the current directory
+            for file_path in directory_path.iterdir():
+                if file_path.is_file():
+                    mesh = pv.read(model_path + file_path.name)
+                    mesh = mesh.extract_surface(algorithm=None).triangulate()
+                    meshes.append(mesh)
+                    vertex_index_end += mesh.n_points
+                    mesh_names.append(" ".join([word.capitalize() if word != "of" else word for word in file_path.name[:-6].split(" ")]))
+                    mesh_intervals.append((vertex_index_start, vertex_index_end))
+                    vertex_index_start = vertex_index_end
+                    if mesh_pts.size > 0:
+                        mesh_pts = np.concat([mesh_pts, np.array(mesh.points, dtype=np.float64)], axis=0)
+                    else:
+                        mesh_pts = np.array(mesh.points, dtype=np.float64)
+                    # weights, in_range = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
+        except Exception as e:
+            raise ValueError(f"Error reading model file: {e}")
+ 
+        # mesh = mesh.extract_surface(algorithm=None).triangulate()
 
-    # Out-of-range vertices get clim_min (white in our colormap)
-    mesh["amplitude"] = np.full(mesh.n_points, clim[0], dtype=np.float64)
+        # mesh_pts = np.array(mesh.points, dtype=np.float64)
+        # viz_params["weights"], viz_params["in_range"] = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
 
-    plotter.add_mesh(
-        mesh,
-        scalars="amplitude",
-        cmap=LinearSegmentedColormap.from_list(
-            "heat", ["white", "yellow", "orange", "red"]
-        ),
-        clim=clim,
-        smooth_shading=True,
-        show_scalar_bar=True,
-        scalar_bar_args={"title": "RMS Amplitude"},
-        name="heatmap_surface",
-    )
+        # Out-of-range vertices get clim_min (white in our colormap)
+        totalMesh = pv.merge(meshes)
+        totalMesh["amplitude"] = np.full(totalMesh.n_points, viz_params["viz_range"][0], dtype=np.float64)
+        
+        mesh_pts = np.array(totalMesh.points, dtype=np.float64)
+        totalWeights, totalRange = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
+        
+        plotter.add_mesh(
+            totalMesh,
+            scalars="amplitude",
+            cmap=LinearSegmentedColormap.from_list(
+                "heat", ["white", "yellow", "orange", "red"]
+            ),
+            clim=viz_params["viz_range"],
+            smooth_shading=True,
+            show_scalar_bar=True,
+            scalar_bar_args={"title": "RMS Amplitude"},
+            name="heatmap_surface",
+        )
 
-    sensor_cloud = pv.PolyData(sensor_pts)
-    plotter.add_mesh(sensor_cloud, color="black", point_size=8,
-                     render_points_as_spheres=True, name="sensor_dots")
+        sensor_cloud = pv.PolyData(sensor_pts)
+        plotter.add_mesh(sensor_cloud, color="black", point_size=8,
+                        render_points_as_spheres=True, name="sensor_dots")
 
     for i, ch in enumerate(channels):
         plotter.add_point_labels(
@@ -97,12 +126,13 @@ def build_scene(plotter, model_path, sensor_positions, sigma, radius, clim):
             point_size=1,
             name=f"label_{ch}",
         )
+    vizIntervals = [mesh_names, mesh_intervals, meshes, [True] * len(mesh_names)]
 
-    return mesh, channels, sensor_pts, weights, in_range
+    return vizIntervals, totalMesh, totalWeights, totalRange, channels, sensor_pts
 
 def main():
     parser = argparse.ArgumentParser(description="3D EMG Surface Heatmap Viewer")
-    parser.add_argument("--model", type=str, default="./models/forearm.stl",
+    parser.add_argument("--model", type=str, default="./models/forearm_muscles/",
                         help="Path to 3D model file (.stl, .obj, .glb, .ply)")
     parser.add_argument("--config", type=str, default="./sensor_config.json",
                         help="Path to sensor_config.json with sensor positions")
@@ -110,8 +140,8 @@ def main():
     parser.add_argument("--port", default="5556", help="ZMQ data port")
     parser.add_argument("--window-ms", type=int, default=200,
                         help="RMS window size in milliseconds")
-    parser.add_argument("--update-ms", type=int, default=50,
-                        help="Visualization update interval in milliseconds")
+    parser.add_argument("--frame-rate", type=int, default=20,
+                        help="Visualization update frequency in Hz")
     parser.add_argument("--sigma", type=float, default=0.1,
                         help="Gaussian spread (meters). Controls how far each sensor's "
                              "influence bleeds across the surface.")
@@ -121,8 +151,20 @@ def main():
                         help="RMS value that maps to the cold (white) end of the colormap")
     parser.add_argument("--clim-max", type=float, default=50.0,
                         help="RMS value that maps to the hot (red) end of the colormap")
-    parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
+
+    viz_params = {
+        "frame_rate": args.frame_rate,
+        "sigma": args.sigma,
+        "radius_cutoff": args.radius,
+        "viz_range": [args.clim_min, args.clim_max],
+        "visualize_function": {"name": "RMS", "func": lambda Y: np.sqrt(np.mean(Y ** 2, axis=1))},
+        "visualize_window_ms": args.window_ms,
+        "mesh": None,
+        "weights": None,
+        "in_range": None,
+        "viz_intervals": None
+    }
 
     # --- Sensor positions ---
     if args.config:
@@ -136,7 +178,7 @@ def main():
         host_ip=args.host,
         data_port=args.port,
         auto_start=False,
-        verbose=args.verbose,
+        verbose=True,
     )
     client.start()
     print(f"ZMQ client started, connecting to {args.host}:{args.port} ...")
@@ -147,10 +189,24 @@ def main():
     plotter.set_background("white")
     plotter.add_axes()
 
-    clim = [args.clim_min, args.clim_max]
-    mesh, channels, sensor_pts, rbf_weights, in_range = build_scene(
-        plotter, args.model, sensor_positions, args.sigma, args.radius, clim
+    vizIntervals, totalMesh, totalWeights, totalRange, channels, sensor_pts = build_scene(
+        viz_params, plotter, args.model, sensor_positions, args.sigma, args.radius
     )
+    
+    viz_params["totalMesh"] = totalMesh
+    viz_params["weights"] = totalWeights
+    viz_params["in_range"] = totalRange
+
+    # viz_params["meshes"] = meshes
+    # viz_params["weights"] = rbf_weights
+    # viz_params["mesh"] = rbf_weights
+    # viz_params["in_range"] = in_range
+    # viz_params["viz_intervals"] = list(zip(mesh_names, mesh_intervals, meshes, [True] * len(mesh_names)))
+    # print(viz_params["viz_intervals"])
+    # viz_params["active_meshes"] = np.vstack([viz_params["meshes"][s:e] for s, e in mesh_intervals])
+    # viz_params["active_weights"] = np.vstack([viz_params["weights"][s:e] for s, e in mesh_intervals])
+    # viz_params["active_in_range"] = np.vstack([viz_params["in_range"][s:e] for s, e in mesh_intervals])
+
     n_sensors = len(channels)
 
     # Camera
@@ -184,26 +240,26 @@ def main():
             return
         last_sample_idx[0] = current_idx
 
-        rms = np.sqrt(np.mean(Y ** 2, axis=1))
+        data = viz_params["visualize_function"]["func"](Y)
 
         sensor_values = np.zeros(n_sensors, dtype=np.float64)
         for i, ch in enumerate(channels):
-            if ch < len(rms):
-                sensor_values[i] = rms[ch]
+            if ch < len(data):
+                sensor_values[i] = data[ch]
 
         # Interpolate in-range vertices, out-of-range stays at clim_min (white)
-        vertex_scalars = np.full(mesh.n_points, clim[0], dtype=np.float64)
-        vertex_scalars[in_range] = (rbf_weights[in_range] @ sensor_values) # use boolean mask to avoid calculating amplitude values for mesh verticies that are out of range.
+        vertex_scalars = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
+        vertex_scalars[viz_params["in_range"]] = (viz_params["weights"][viz_params["in_range"]] @ sensor_values) # use boolean mask to avoid calculating amplitude values for mesh verticies that are out of range. matmul between weight matrix and vector of sensor value vector to get mech vertex scalar
 
-        mesh["amplitude"] = vertex_scalars
-        mesh.Modified()
+        viz_params["mesh"]["amplitude"] = vertex_scalars 
+        viz_params["mesh"].Modified()
         plotter.render()
-        print(f"[update] rms: {sensor_values.round(1)}")
+        print(f"[update] {viz_params["visualize_function"]["name"]}: {sensor_values.round(1)}")
 
     timer = QtCore.QTimer()
     timer.timeout.connect(update)
-    timer.start(args.update_ms)
-    
+    timer.start(1000 // viz_params["frame_rate"])
+
     print("\n3D viewer is running. Close the window to stop.\n")
 
     ################### UI Controls ############################
@@ -211,15 +267,91 @@ def main():
     # 1. Create a container widget for your controls
     container = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
+    
+    vizFuncBtn = QtWidgets.QPushButton("Set Visualization Function")
+    vizFuncMenu = QtWidgets.QMenu()
 
+    def setVizFunc(function):
+        viz_params["visualize_function"] = function
+        plotter.remove_actor("heatmap_surface")
+        plotter.add_mesh(
+            viz_params["mesh"],
+            scalars="amplitude",
+            cmap=LinearSegmentedColormap.from_list(
+                "heat", ["white", "yellow", "orange", "red"]
+            ),
+            clim=viz_params["viz_range"],
+            smooth_shading=True,
+            show_scalar_bar=True,
+            scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
+            name="heatmap_surface",
+        ) 
+    
+    vizFuncMenu.addAction("RMS Amplitude", lambda: setVizFunc({"name": "RMS Amplitude", "func": lambda Y: np.sqrt(np.mean(Y ** 2, axis=1))}))
+    vizFuncMenu.addAction("Absolute Spike Amplitude", lambda: setVizFunc({"name": "Abs Spike Amplitude", "func": lambda Y: np.max(np.abs(Y), axis=1)}))
+    vizFuncBtn.setMenu(vizFuncMenu)
+    layout.addWidget(vizFuncBtn)
+
+    def rebuildMesh(totalMesh, totalWeights, totalRange, intervals):
+        meshes = ([mesh for i, mesh in enumerate(vizIntervals[2]) if vizIntervals[3][i]])
+        viz_params["mesh"] = pv.merge(meshes)
+        viz_params["mesh"]["amplitude"] = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
+        
+        viz_params["weights"] = np.concatenate([totalWeights[s:e] for s, e in intervals], axis=0)
+        viz_params["in_range"] = np.concatenate([totalRange[s:e] for s, e in intervals], axis=0)
+
+    def toggleMuscleViz(idx, isChecked):
+        vizIntervals[3][idx] = isChecked
+        rebuildMesh(totalMesh, totalWeights, totalRange, [t for i, t in enumerate(vizIntervals[1]) if vizIntervals[3][i]])
+      
+        plotter.remove_actor("heatmap_surface")
+        plotter.add_mesh(
+            viz_params["mesh"],
+            scalars="amplitude",
+            cmap=LinearSegmentedColormap.from_list(
+                "heat", ["white", "yellow", "orange", "red"]
+            ),
+            clim=viz_params["viz_range"],
+            smooth_shading=True,
+            show_scalar_bar=True,
+            scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
+            name="heatmap_surface",
+        )
  
-    btn = QtWidgets.QPushButton("Toggle Edges")
-    def toggle():
-        print("Toggling edges...")
+    for idx, muscleName in enumerate(vizIntervals[0]):
+        vizMuscBtn = QtWidgets.QPushButton(muscleName)
+        vizMuscBtn.setCheckable(True)
+        vizMuscBtn.setChecked(True)
+        vizMuscBtn.clicked.connect(lambda checked, i=idx: toggleMuscleViz(i, checked))
+        layout.addWidget(vizMuscBtn)
 
-    btn.clicked.connect(toggle)
-    layout.addWidget(btn)
     container.setLayout(layout)
+
+
+    # vizFuncBtn = QtWidgets.QPushButton("Set Visualization Function")
+    # vizFuncMenu = QtWidgets.QMenu()
+
+    # def setVizFunc(function):
+    #     viz_params["visualize_function"] = function
+    #     plotter.remove_actor("heatmap_surface")
+    #     plotter.add_mesh(
+    #         viz_params["active_meshes"],
+    #         scalars="amplitude",
+    #         cmap=LinearSegmentedColormap.from_list(
+    #             "heat", ["white", "yellow", "orange", "red"]
+    #         ),
+    #         clim=viz_params["viz_range"],
+    #         smooth_shading=True,
+    #         show_scalar_bar=True,
+    #         scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
+    #         name="heatmap_surface",
+    #     ) 
+    
+    # vizFuncMenu.addAction("RMS Amplitude", lambda: setVizFunc({"name": "RMS Amplitude", "func": lambda Y: np.sqrt(np.mean(Y ** 2, axis=1))}))
+    # vizFuncMenu.addAction("Absolute Spike Amplitude", lambda: setVizFunc({"name": "Abs Spike Amplitude", "func": lambda Y: np.max(np.abs(Y), axis=1)}))
+    # vizFuncBtn.setMenu(vizFuncMenu)
+    # layout.addWidget(vizFuncBtn)
+    # container.setLayout(layout)
 
     # 3. Add the container to the plotter as a Dock
     dock = QtWidgets.QDockWidget("Display Settings")
