@@ -25,6 +25,11 @@ from PyQt5 import QtCore
 import os
 from pathlib import Path
 
+# Create colormap once for performance
+HEATMAP_COLORMAP = LinearSegmentedColormap.from_list(
+    "heat", ["white", "yellow", "orange", "red"]
+)
+
 
 def load_sensor_config(path: str) -> dict:
     with open(path, "r") as f:
@@ -54,11 +59,8 @@ def compute_rbf_weights(mesh_points, sensor_points, sigma, radius):
     print(f"RBF weights ready. {in_range.sum()} / {len(mesh_points)} vertices in range.")
     return weights, in_range
 
-# def build_mesh(viz_params, meshes):
-
 
 def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius):
-    mesh_pts = np.array([])
     meshes = []
     mesh_names = []
     mesh_intervals = []
@@ -80,18 +82,8 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
                     mesh_names.append(" ".join([word.capitalize() if word != "of" else word for word in file_path.name[:-6].split(" ")]))
                     mesh_intervals.append((vertex_index_start, vertex_index_end))
                     vertex_index_start = vertex_index_end
-                    if mesh_pts.size > 0:
-                        mesh_pts = np.concat([mesh_pts, np.array(mesh.points, dtype=np.float64)], axis=0)
-                    else:
-                        mesh_pts = np.array(mesh.points, dtype=np.float64)
-                    # weights, in_range = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
         except Exception as e:
             raise ValueError(f"Error reading model file: {e}")
- 
-        # mesh = mesh.extract_surface(algorithm=None).triangulate()
-
-        # mesh_pts = np.array(mesh.points, dtype=np.float64)
-        # viz_params["weights"], viz_params["in_range"] = compute_rbf_weights(mesh_pts, sensor_pts, sigma, radius)
 
         # Out-of-range vertices get clim_min (white in our colormap)
         totalMesh = pv.merge(meshes)
@@ -103,9 +95,7 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
         plotter.add_mesh(
             totalMesh,
             scalars="amplitude",
-            cmap=LinearSegmentedColormap.from_list(
-                "heat", ["white", "yellow", "orange", "red"]
-            ),
+            cmap=HEATMAP_COLORMAP,
             clim=viz_params["viz_range"],
             smooth_shading=True,
             show_scalar_bar=True,
@@ -192,20 +182,13 @@ def main():
     vizIntervals, totalMesh, totalWeights, totalRange, channels, sensor_pts = build_scene(
         viz_params, plotter, args.model, sensor_positions, args.sigma, args.radius
     )
-    
+
+    # Initialize mesh parameters and pre-allocate vertex_scalars for performance
     viz_params["totalMesh"] = totalMesh
+    viz_params["mesh"] = totalMesh
     viz_params["weights"] = totalWeights
     viz_params["in_range"] = totalRange
-
-    # viz_params["meshes"] = meshes
-    # viz_params["weights"] = rbf_weights
-    # viz_params["mesh"] = rbf_weights
-    # viz_params["in_range"] = in_range
-    # viz_params["viz_intervals"] = list(zip(mesh_names, mesh_intervals, meshes, [True] * len(mesh_names)))
-    # print(viz_params["viz_intervals"])
-    # viz_params["active_meshes"] = np.vstack([viz_params["meshes"][s:e] for s, e in mesh_intervals])
-    # viz_params["active_weights"] = np.vstack([viz_params["weights"][s:e] for s, e in mesh_intervals])
-    # viz_params["active_in_range"] = np.vstack([viz_params["in_range"][s:e] for s, e in mesh_intervals])
+    viz_params["vertex_scalars"] = np.full(totalMesh.n_points, viz_params["viz_range"][0], dtype=np.float64)
 
     n_sensors = len(channels)
 
@@ -248,8 +231,11 @@ def main():
                 sensor_values[i] = data[ch]
 
         # Interpolate in-range vertices, out-of-range stays at clim_min (white)
-        vertex_scalars = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
-        vertex_scalars[viz_params["in_range"]] = (viz_params["weights"][viz_params["in_range"]] @ sensor_values) # use boolean mask to avoid calculating amplitude values for mesh verticies that are out of range. matmul between weight matrix and vector of sensor value vector to get mech vertex scalar
+        # Reuse pre-allocated array for performance
+        vertex_scalars = viz_params["vertex_scalars"]
+        vertex_scalars.fill(viz_params["viz_range"][0])
+        in_range_mask = viz_params["in_range"]
+        vertex_scalars[in_range_mask] = (viz_params["weights"][in_range_mask] @ sensor_values)
 
         viz_params["mesh"]["amplitude"] = vertex_scalars 
         viz_params["mesh"].Modified()
@@ -277,9 +263,7 @@ def main():
         plotter.add_mesh(
             viz_params["mesh"],
             scalars="amplitude",
-            cmap=LinearSegmentedColormap.from_list(
-                "heat", ["white", "yellow", "orange", "red"]
-            ),
+            cmap=HEATMAP_COLORMAP,
             clim=viz_params["viz_range"],
             smooth_shading=True,
             show_scalar_bar=True,
@@ -292,25 +276,25 @@ def main():
     vizFuncBtn.setMenu(vizFuncMenu)
     layout.addWidget(vizFuncBtn)
 
-    def rebuildMesh(totalMesh, totalWeights, totalRange, intervals):
-        meshes = ([mesh for i, mesh in enumerate(vizIntervals[2]) if vizIntervals[3][i]])
+    def rebuildMesh(totalWeights, totalRange, intervals):
+        meshes = [mesh for mesh, visible in zip(vizIntervals[2], vizIntervals[3]) if visible]
         viz_params["mesh"] = pv.merge(meshes)
         viz_params["mesh"]["amplitude"] = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
-        
+
         viz_params["weights"] = np.concatenate([totalWeights[s:e] for s, e in intervals], axis=0)
         viz_params["in_range"] = np.concatenate([totalRange[s:e] for s, e in intervals], axis=0)
+        # Reallocate vertex_scalars array when mesh size changes
+        viz_params["vertex_scalars"] = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
 
     def toggleMuscleViz(idx, isChecked):
         vizIntervals[3][idx] = isChecked
-        rebuildMesh(totalMesh, totalWeights, totalRange, [t for i, t in enumerate(vizIntervals[1]) if vizIntervals[3][i]])
-      
+        rebuildMesh(totalWeights, totalRange, [t for t, visible in zip(vizIntervals[1], vizIntervals[3]) if visible])
+
         plotter.remove_actor("heatmap_surface")
         plotter.add_mesh(
             viz_params["mesh"],
             scalars="amplitude",
-            cmap=LinearSegmentedColormap.from_list(
-                "heat", ["white", "yellow", "orange", "red"]
-            ),
+            cmap=HEATMAP_COLORMAP,
             clim=viz_params["viz_range"],
             smooth_shading=True,
             show_scalar_bar=True,
@@ -327,33 +311,7 @@ def main():
 
     container.setLayout(layout)
 
-
-    # vizFuncBtn = QtWidgets.QPushButton("Set Visualization Function")
-    # vizFuncMenu = QtWidgets.QMenu()
-
-    # def setVizFunc(function):
-    #     viz_params["visualize_function"] = function
-    #     plotter.remove_actor("heatmap_surface")
-    #     plotter.add_mesh(
-    #         viz_params["active_meshes"],
-    #         scalars="amplitude",
-    #         cmap=LinearSegmentedColormap.from_list(
-    #             "heat", ["white", "yellow", "orange", "red"]
-    #         ),
-    #         clim=viz_params["viz_range"],
-    #         smooth_shading=True,
-    #         show_scalar_bar=True,
-    #         scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
-    #         name="heatmap_surface",
-    #     ) 
-    
-    # vizFuncMenu.addAction("RMS Amplitude", lambda: setVizFunc({"name": "RMS Amplitude", "func": lambda Y: np.sqrt(np.mean(Y ** 2, axis=1))}))
-    # vizFuncMenu.addAction("Absolute Spike Amplitude", lambda: setVizFunc({"name": "Abs Spike Amplitude", "func": lambda Y: np.max(np.abs(Y), axis=1)}))
-    # vizFuncBtn.setMenu(vizFuncMenu)
-    # layout.addWidget(vizFuncBtn)
-    # container.setLayout(layout)
-
-    # 3. Add the container to the plotter as a Dock
+    # Add the container to the plotter as a Dock
     dock = QtWidgets.QDockWidget("Display Settings")
     dock.setWidget(container)
     plotter.app_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
