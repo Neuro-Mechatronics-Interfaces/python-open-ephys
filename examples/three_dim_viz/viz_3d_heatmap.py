@@ -101,11 +101,14 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
             show_scalar_bar=True,
             scalar_bar_args={"title": "RMS Amplitude"},
             name="heatmap_surface",
+            nan_opacity=0.0,
+            opacity=1.0,
         )
 
         sensor_cloud = pv.PolyData(sensor_pts)
         plotter.add_mesh(sensor_cloud, color="black", point_size=8,
-                        render_points_as_spheres=True, name="sensor_dots")
+                        render_points_as_spheres=True, name="sensor_dots",
+                        pickable=False)
 
     for i, ch in enumerate(channels):
         plotter.add_point_labels(
@@ -115,10 +118,17 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
             text_color="black",
             point_size=1,
             name=f"label_{ch}",
+            pickable=False,
         )
-    vizIntervals = [mesh_names, mesh_intervals, meshes, [True] * len(mesh_names)]
+    muscles = {
+        "names": mesh_names,
+        "intervals": mesh_intervals,
+        "meshes": meshes,
+        "visible": [True] * len(mesh_names),
+        "buttons": [],
+    }
 
-    return vizIntervals, totalMesh, totalWeights, totalRange, channels, sensor_pts
+    return muscles, totalMesh, totalWeights, totalRange, channels, sensor_pts
 
 def main():
     parser = argparse.ArgumentParser(description="3D EMG Surface Heatmap Viewer")
@@ -169,6 +179,7 @@ def main():
         data_port=args.port,
         auto_start=False,
         verbose=True,
+        # align_to_header_index=True,
     )
     client.start()
     print(f"ZMQ client started, connecting to {args.host}:{args.port} ...")
@@ -177,9 +188,10 @@ def main():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     plotter = BackgroundPlotter(title="EMG 3D Heatmap", window_size=(1200, 800))
     plotter.set_background("white")
+    plotter.enable_depth_peeling()
     plotter.add_axes()
 
-    vizIntervals, totalMesh, totalWeights, totalRange, channels, sensor_pts = build_scene(
+    muscles, totalMesh, totalWeights, totalRange, channels, sensor_pts = build_scene(
         viz_params, plotter, args.model, sensor_positions, args.sigma, args.radius
     )
 
@@ -196,6 +208,47 @@ def main():
     center = sensor_pts.mean(axis=0)
     plotter.camera.focal_point = center
     plotter.camera.position = center + np.array([0.1, 0.05, 0.05])
+
+    def toggleMuscleViz(idx, isChecked):
+        muscles["visible"][idx] = isChecked
+        start, end = muscles["intervals"][idx]
+        if not isChecked:
+            viz_params["vertex_scalars"][start:end] = np.nan
+        else:
+            viz_params["vertex_scalars"][start:end] = viz_params["viz_range"][0]
+        viz_params["mesh"]["amplitude"] = viz_params["vertex_scalars"]
+        viz_params["mesh"].Modified()
+        plotter.render()
+
+    def onMeshClick(picked_point, picker):
+        """Handle mesh click to toggle muscle visibility."""
+        dataset = picker.GetDataSet()
+        if dataset is None:
+            return
+
+        mesh = pv.wrap(dataset)
+        cell_id = mesh.find_containing_cell(picked_point)
+        if cell_id < 0:
+            return
+
+        vertex_id = mesh.get_cell(cell_id).point_ids[0]
+
+        for idx, (start, end) in enumerate(muscles["intervals"]):
+            if start <= vertex_id < end:
+                new_state = not muscles["visible"][idx]
+                muscles["buttons"][idx].setChecked(new_state)
+                toggleMuscleViz(idx, new_state)
+                return
+
+    # Enable click-to-toggle muscle visibility
+    plotter.enable_surface_point_picking(
+        callback=onMeshClick,
+        show_point=False,
+        show_message=False,
+        left_clicking=True,
+        picker='cell',
+        use_picker=True,
+    )
 
     # --- Update callback ---
     last_sample_idx = [0]  # track last seen sample index to skip stale data
@@ -237,6 +290,11 @@ def main():
         in_range_mask = viz_params["in_range"]
         vertex_scalars[in_range_mask] = (viz_params["weights"][in_range_mask] @ sensor_values)
 
+        # Mask hidden muscles to NaN (rendered transparent via nan_opacity=0)
+        for idx, (start, end) in enumerate(muscles["intervals"]):
+            if not muscles["visible"][idx]:
+                vertex_scalars[start:end] = np.nan
+
         viz_params["mesh"]["amplitude"] = vertex_scalars 
         viz_params["mesh"].Modified()
         plotter.render()
@@ -249,11 +307,11 @@ def main():
     print("\n3D viewer is running. Close the window to stop.\n")
 
     ################### UI Controls ############################
-    
-    # 1. Create a container widget for your controls
+
     container = QtWidgets.QWidget()
     layout = QtWidgets.QVBoxLayout()
-    
+    layout.setSpacing(4)
+
     vizFuncBtn = QtWidgets.QPushButton("Set Visualization Function")
     vizFuncMenu = QtWidgets.QMenu()
 
@@ -269,54 +327,49 @@ def main():
             show_scalar_bar=True,
             scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
             name="heatmap_surface",
-        ) 
-    
+            nan_opacity=0.0,
+            opacity=1.0,
+        )
+
     vizFuncMenu.addAction("RMS Amplitude", lambda: setVizFunc({"name": "RMS Amplitude", "func": lambda Y: np.sqrt(np.mean(Y ** 2, axis=1))}))
     vizFuncMenu.addAction("Absolute Spike Amplitude", lambda: setVizFunc({"name": "Abs Spike Amplitude", "func": lambda Y: np.max(np.abs(Y), axis=1)}))
     vizFuncBtn.setMenu(vizFuncMenu)
     layout.addWidget(vizFuncBtn)
 
-    def rebuildMesh(totalWeights, totalRange, intervals):
-        meshes = [mesh for mesh, visible in zip(vizIntervals[2], vizIntervals[3]) if visible]
-        viz_params["mesh"] = pv.merge(meshes)
-        viz_params["mesh"]["amplitude"] = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
+    # --- Selected Muscles ---
+    musclesLabel = QtWidgets.QLabel("Selected Muscles")
+    musclesLabel.setStyleSheet("font-weight: bold; font-size: 12px;")
+    layout.addWidget(musclesLabel)
 
-        viz_params["weights"] = np.concatenate([totalWeights[s:e] for s, e in intervals], axis=0)
-        viz_params["in_range"] = np.concatenate([totalRange[s:e] for s, e in intervals], axis=0)
-        # Reallocate vertex_scalars array when mesh size changes
-        viz_params["vertex_scalars"] = np.full(viz_params["mesh"].n_points, viz_params["viz_range"][0], dtype=np.float64)
+    scrollArea = QtWidgets.QScrollArea()
+    scrollArea.setWidgetResizable(True)
+    scrollWidget = QtWidgets.QWidget()
+    scrollLayout = QtWidgets.QVBoxLayout()
+    scrollLayout.setContentsMargins(0, 0, 0, 0)
+    scrollLayout.setAlignment(QtCore.Qt.AlignTop)
+    scrollWidget.setLayout(scrollLayout)
+    scrollArea.setWidget(scrollWidget)
+    layout.addWidget(scrollArea, stretch=1)
 
-    def toggleMuscleViz(idx, isChecked):
-        vizIntervals[3][idx] = isChecked
-        rebuildMesh(totalWeights, totalRange, [t for t, visible in zip(vizIntervals[1], vizIntervals[3]) if visible])
+    muscBtns = []
 
-        plotter.remove_actor("heatmap_surface")
-        plotter.add_mesh(
-            viz_params["mesh"],
-            scalars="amplitude",
-            cmap=HEATMAP_COLORMAP,
-            clim=viz_params["viz_range"],
-            smooth_shading=True,
-            show_scalar_bar=True,
-            scalar_bar_args={"title": viz_params["visualize_function"]["name"]},
-            name="heatmap_surface",
-        )
- 
-    for idx, muscleName in enumerate(vizIntervals[0]):
-        vizMuscBtn = QtWidgets.QPushButton(muscleName)
-        vizMuscBtn.setCheckable(True)
-        vizMuscBtn.setChecked(True)
-        vizMuscBtn.clicked.connect(lambda checked, i=idx: toggleMuscleViz(i, checked))
-        layout.addWidget(vizMuscBtn)
+    for idx, muscleName in enumerate(muscles["names"]):
+        btn = QtWidgets.QPushButton(muscleName)
+        btn.setCheckable(True)
+        btn.setChecked(True)
+        btn.clicked.connect(lambda checked, i=idx: toggleMuscleViz(i, checked))
+        scrollLayout.addWidget(btn)
+        muscBtns.append(btn)
+
+    muscles["buttons"] = muscBtns
 
     container.setLayout(layout)
 
-    # Add the container to the plotter as a Dock
     dock = QtWidgets.QDockWidget("Display Settings")
     dock.setWidget(container)
     plotter.app_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
 
-     ###########################################################
+    ###########################################################
 
     plotter.app.exec_()
 
