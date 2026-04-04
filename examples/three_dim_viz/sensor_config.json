@@ -1,13 +1,534 @@
 {
     "sensors": [
         {
+            "channel": 1,
+            "position": [
+                -0.209763,
+                0.067274,
+                1.11392
+            ],
+            "label": "Empty.001",
+            "auto_placed": true
+        },
+        {
+            "channel": 2,
+            "position": [
+                -0.211271,
+                0.06498,
+                1.102824
+            ],
+            "label": "Empty.002",
+            "auto_placed": true
+        },
+        {
+            "channel": 3,
+            "position": [
+                -0.21293,
+                0.061468,
+                1.08794
+            ],
+            "label": "Empty.003",
+            "auto_placed": true
+        },
+        {
+            "channel": 4,
+            "position": [
+                -0.214522,
+                0.056958,
+                1.07055
+            ],
+            "label": "Empty.004",
+            "auto_placed": true
+        },
+        {
+            "channel": 5,
+            "position": [
+                -0.216681,
+                0.052028,
+                1.051162
+            ],
+            "label": "Empty.005",
+            "auto_placed": true
+        },
+        {
+            "channel": 6,
+            "position": [
+                -0.218681,
+                0.0474,
+                1.033771
+            ],
+            "label": "Empty.006",
+            "auto_placed": true
+        },
+        {
+            "channel": 7,
+            "position": [
+                -0.220884,
+                0.042253,
+                1.014911
+            ],
+            "label": "Empty.007",
+            "auto_placed": true
+        },
+        {
+            "channel": 8,
+            "position": [
+                -0.223902,
+                0.03716,
+                0.994761
+            ],
+            "label": "Empty.008",
+            "auto_placed": true
+        },
+        {
+            "channel": 9,
+            "position": [
+                -0.227596,
+                0.031227,
+                0.97087
+            ],
+            "label": "Empty.009",
+            "auto_placed": true
+        },
+        {
+            "channel": 10,
+            "position": [
+                -0.230918,
+                0.025972,
+                0.950643
+            ],
+            "label": "Empty.010",
+            "auto_placed": true
+        },
+        {
+            "channel": 11,
+            "position": [
+                -0.234252,
+                0.020378,
+                0.929932
+            ],
+            "label": "Empty.011",
+            "auto_placed": true
+        },
+        {
+            "channel": 12,
+            "position": [
+                -0.237159,
+                0.013677,
+                0.907547
+            ],
+            "label": "Empty.012",
+            "auto_placed": true
+        },
+        {
+            "channel": 13,
+            "position": [
+                -0.240223,
+                0.006851,
+                0.885208
+            ],
+            "label": "Empty.013",
+            "auto_placed": true
+        },
+        {
+            "channel": 14,
+            "position": [
+                -0.204667,
+                0.063973,
+                1.110947
+            ],
+            "label": "Empty.014",
+            "auto_placed": true
+        },
+        {
+            "channel": 15,
+            "position": [
+                -0.205033,
+                0.060452,
+                1.097209
+            ],
+            "label": "Empty.015",
+            "auto_placed": true
+        },
+        {
+            "channel": 16,
+            "position": [
+                -0.206762,
+                0.056526,
+                1.079409
+            ],
+            "label": "Empty.016",
+            "auto_placed": true
+        },
+        {
+            "channel": 17,
+            "position": [
+                -0.208604,
+                0.052427,
+                1.06204
+            ],
+            "label": "Empty.017",
+            "auto_placed": true
+        },
+        {
+            "channel": 18,
+            "position": [
+                -0.2109,
+                0.047741,
+                1.04287
+            ],
+            "label": "Empty.018",
+            "auto_placed": true
+        },
+        {
+            "channel": 19,
+            "position": [
+                -0.212911,
+                0.04292,
+                1.025621
+            ],
+            "label": "Empty.019",
+            "auto_placed": true
+        },
+        {
+            "channel": 20,
+            "position": [
+                -0.215218,
+                0.037307,
+                1.006726
+            ],
+            "label": "Empty.020",
+            "auto_placed": true
+        },
+        {
+            "channel": 21,
+            "position": [
+                -0.218231,
+                0.03162,
+                0.986538
+            ],
+            "label": "Empty.021",
+            "auto_placed": true
+        },
+        {
+            "channel": 22,
+            "position": [
+                -0.221959,
+                0.024995,
+                0.962786
+            ],
+            "label": "Empty.022",
+            "auto_placed": true
+        },
+        {
+            "channel": 23,
+            "position": [
+                -0.225544,
+                0.019094,
+                0.942733
+            ],
+            "label": "Empty.023",
+            "auto_placed": true
+        },
+        {
+            "channel": 24,
+            "position": [
+                -0.229377,
+                0.012719,
+                0.922085
+            ],
+            "label": "Empty.024",
+            "auto_placed": true
+        },
+        {
+            "channel": 25,
+            "position": [
+                -0.233597,
+                0.005646,
+                0.899958
+            ],
+            "label": "Empty.025",
+            "auto_placed": true
+        },
+        {
+            "channel": 26,
+            "position": [
+                -0.238258,
+                -0.001333,
+                0.877865
+            ],
+            "label": "Empty.026",
+            "auto_placed": true
+        },
+        {
+            "channel": 27,
+            "position": [
+                -0.234753,
+                0.059085,
+                1.118803
+            ],
+            "label": "Empty.027",
+            "auto_placed": true
+        },
+        {
+            "channel": 28,
+            "position": [
+                -0.238765,
+                0.059621,
+                1.107393
+            ],
+            "label": "Empty.028",
+            "auto_placed": true
+        },
+        {
+            "channel": 29,
+            "position": [
+                -0.242511,
+                0.059014,
+                1.092128
+            ],
+            "label": "Empty.029",
+            "auto_placed": true
+        },
+        {
+            "channel": 30,
+            "position": [
+                -0.245627,
+                0.057681,
+                1.074226
+            ],
+            "label": "Empty.030",
+            "auto_placed": true
+        },
+        {
+            "channel": 31,
+            "position": [
+                -0.24867,
+                0.055254,
+                1.054397
+            ],
+            "label": "Empty.031",
+            "auto_placed": true
+        },
+        {
+            "channel": 32,
+            "position": [
+                -0.250968,
+                0.052744,
+                1.036576
+            ],
+            "label": "Empty.032",
+            "auto_placed": true
+        },
+        {
+            "channel": 33,
+            "position": [
+                -0.252879,
+                0.049425,
+                1.017279
+            ],
+            "label": "Empty.033",
+            "auto_placed": true
+        },
+        {
+            "channel": 34,
+            "position": [
+                -0.255279,
+                0.044786,
+                0.996952
+            ],
+            "label": "Empty.034",
+            "auto_placed": true
+        },
+        {
+            "channel": 35,
+            "position": [
+                -0.25793,
+                0.038633,
+                0.97298
+            ],
+            "label": "Empty.035",
+            "auto_placed": true
+        },
+        {
+            "channel": 36,
+            "position": [
+                -0.259731,
+                0.032712,
+                0.952713
+            ],
+            "label": "Empty.036",
+            "auto_placed": true
+        },
+        {
+            "channel": 37,
+            "position": [
+                -0.261014,
+                0.026224,
+                0.931946
+            ],
+            "label": "Empty.037",
+            "auto_placed": true
+        },
+        {
+            "channel": 38,
+            "position": [
+                -0.26117,
+                0.019347,
+                0.90926
+            ],
+            "label": "Empty.038",
+            "auto_placed": true
+        },
+        {
+            "channel": 39,
+            "position": [
+                -0.261118,
+                0.011715,
+                0.886714
+            ],
+            "label": "Empty.039",
+            "auto_placed": true
+        },
+        {
+            "channel": 40,
+            "position": [
+                -0.2329,
+                0.06213,
+                1.114834
+            ],
+            "label": "Empty.040",
+            "auto_placed": true
+        },
+        {
+            "channel": 41,
+            "position": [
+                -0.234906,
+                0.061855,
+                1.100584
+            ],
+            "label": "Empty.041",
+            "auto_placed": true
+        },
+        {
+            "channel": 42,
+            "position": [
+                -0.237711,
+                0.05992,
+                1.082478
+            ],
+            "label": "Empty.042",
+            "auto_placed": true
+        },
+        {
+            "channel": 43,
+            "position": [
+                -0.240134,
+                0.057582,
+                1.064794
+            ],
+            "label": "Empty.043",
+            "auto_placed": true
+        },
+        {
+            "channel": 44,
+            "position": [
+                -0.242535,
+                0.054315,
+                1.045325
+            ],
+            "label": "Empty.044",
+            "auto_placed": true
+        },
+        {
+            "channel": 45,
+            "position": [
+                -0.244067,
+                0.051067,
+                1.027671
+            ],
+            "label": "Empty.045",
+            "auto_placed": true
+        },
+        {
+            "channel": 46,
+            "position": [
+                -0.245309,
+                0.046969,
+                1.008311
+            ],
+            "label": "Empty.046",
+            "auto_placed": true
+        },
+        {
+            "channel": 47,
+            "position": [
+                -0.246944,
+                0.041889,
+                0.987819
+            ],
+            "label": "Empty.047",
+            "auto_placed": true
+        },
+        {
+            "channel": 48,
+            "position": [
+                -0.248879,
+                0.035443,
+                0.963807
+            ],
+            "label": "Empty.048",
+            "auto_placed": true
+        },
+        {
+            "channel": 49,
+            "position": [
+                -0.250308,
+                0.02921,
+                0.94356
+            ],
+            "label": "Empty.049",
+            "auto_placed": true
+        },
+        {
+            "channel": 50,
+            "position": [
+                -0.25153,
+                0.022283,
+                0.922713
+            ],
+            "label": "Empty.050",
+            "auto_placed": true
+        },
+        {
+            "channel": 51,
+            "position": [
+                -0.252713,
+                0.014421,
+                0.900385
+            ],
+            "label": "Empty.051",
+            "auto_placed": true
+        },
+        {
+            "channel": 52,
+            "position": [
+                -0.254329,
+                0.007787,
+                0.87784
+            ],
+            "label": "Empty.052",
+            "auto_placed": true
+        },
+        {
             "channel": 53,
             "position": [
                 -0.254473,
                 0.034701,
                 1.1266
             ],
-            "label": "Empty.053"
+            "label": "Empty.053",
+            "auto_placed": false
         },
         {
             "channel": 54,
@@ -16,7 +537,8 @@
                 0.03103,
                 1.116111
             ],
-            "label": "Empty.054"
+            "label": "Empty.054",
+            "auto_placed": false
         },
         {
             "channel": 55,
@@ -25,7 +547,8 @@
                 0.027042,
                 1.101733
             ],
-            "label": "Empty.055"
+            "label": "Empty.055",
+            "auto_placed": false
         },
         {
             "channel": 56,
@@ -34,7 +557,8 @@
                 0.02372,
                 1.084448
             ],
-            "label": "Empty.056"
+            "label": "Empty.056",
+            "auto_placed": false
         },
         {
             "channel": 57,
@@ -43,7 +567,8 @@
                 0.020044,
                 1.064949
             ],
-            "label": "Empty.057"
+            "label": "Empty.057",
+            "auto_placed": false
         },
         {
             "channel": 58,
@@ -52,7 +577,8 @@
                 0.017359,
                 1.047076
             ],
-            "label": "Empty.058"
+            "label": "Empty.058",
+            "auto_placed": false
         },
         {
             "channel": 59,
@@ -61,7 +587,8 @@
                 0.014704,
                 1.027515
             ],
-            "label": "Empty.059"
+            "label": "Empty.059",
+            "auto_placed": false
         },
         {
             "channel": 60,
@@ -70,7 +597,8 @@
                 0.011007,
                 1.006601
             ],
-            "label": "Empty.060"
+            "label": "Empty.060",
+            "auto_placed": false
         },
         {
             "channel": 61,
@@ -79,7 +607,8 @@
                 0.006445,
                 0.981832
             ],
-            "label": "Empty.061"
+            "label": "Empty.061",
+            "auto_placed": false
         },
         {
             "channel": 62,
@@ -88,7 +617,8 @@
                 0.002428,
                 0.960897
             ],
-            "label": "Empty.062"
+            "label": "Empty.062",
+            "auto_placed": false
         },
         {
             "channel": 63,
@@ -97,7 +627,8 @@
                 -0.001315,
                 0.939286
             ],
-            "label": "Empty.063"
+            "label": "Empty.063",
+            "auto_placed": false
         },
         {
             "channel": 64,
@@ -106,7 +637,8 @@
                 -0.004739,
                 0.916023
             ],
-            "label": "Empty.064"
+            "label": "Empty.064",
+            "auto_placed": false
         },
         {
             "channel": 65,
@@ -115,7 +647,8 @@
                 0.041288,
                 1.121996
             ],
-            "label": "Empty.065"
+            "label": "Empty.065",
+            "auto_placed": false
         },
         {
             "channel": 66,
@@ -124,7 +657,8 @@
                 0.039307,
                 1.108524
             ],
-            "label": "Empty.066"
+            "label": "Empty.066",
+            "auto_placed": false
         },
         {
             "channel": 67,
@@ -133,7 +667,8 @@
                 0.035521,
                 1.091151
             ],
-            "label": "Empty.067"
+            "label": "Empty.067",
+            "auto_placed": false
         },
         {
             "channel": 68,
@@ -142,7 +677,8 @@
                 0.032104,
                 1.073865
             ],
-            "label": "Empty.068"
+            "label": "Empty.068",
+            "auto_placed": false
         },
         {
             "channel": 69,
@@ -151,7 +687,8 @@
                 0.028392,
                 1.054479
             ],
-            "label": "Empty.069"
+            "label": "Empty.069",
+            "auto_placed": false
         },
         {
             "channel": 70,
@@ -160,7 +697,8 @@
                 0.025708,
                 1.036669
             ],
-            "label": "Empty.070"
+            "label": "Empty.070",
+            "auto_placed": false
         },
         {
             "channel": 71,
@@ -169,7 +707,8 @@
                 0.023007,
                 1.01707
             ],
-            "label": "Empty.071"
+            "label": "Empty.071",
+            "auto_placed": false
         },
         {
             "channel": 72,
@@ -178,7 +717,8 @@
                 0.019337,
                 0.996107
             ],
-            "label": "Empty.072"
+            "label": "Empty.072",
+            "auto_placed": false
         },
         {
             "channel": 73,
@@ -187,7 +727,8 @@
                 0.014809,
                 0.971542
             ],
-            "label": "Empty.073"
+            "label": "Empty.073",
+            "auto_placed": false
         },
         {
             "channel": 74,
@@ -196,7 +737,8 @@
                 0.010858,
                 0.950552
             ],
-            "label": "Empty.074"
+            "label": "Empty.074",
+            "auto_placed": false
         },
         {
             "channel": 75,
@@ -205,7 +747,8 @@
                 0.007165,
                 0.928958
             ],
-            "label": "Empty.075"
+            "label": "Empty.075",
+            "auto_placed": false
         },
         {
             "channel": 76,
@@ -214,7 +757,528 @@
                 0.003736,
                 0.905759
             ],
-            "label": "Empty.076"
+            "label": "Empty.076",
+            "auto_placed": false
+        },
+        {
+            "channel": 77,
+            "position": [
+                -0.221995,
+                0.016677,
+                1.126561
+            ],
+            "label": "Empty.077",
+            "auto_placed": true
+        },
+        {
+            "channel": 78,
+            "position": [
+                -0.223196,
+                0.015034,
+                1.115283
+            ],
+            "label": "Empty.078",
+            "auto_placed": true
+        },
+        {
+            "channel": 79,
+            "position": [
+                -0.225386,
+                0.012574,
+                1.100234
+            ],
+            "label": "Empty.079",
+            "auto_placed": true
+        },
+        {
+            "channel": 80,
+            "position": [
+                -0.228458,
+                0.009593,
+                1.08269
+            ],
+            "label": "Empty.080",
+            "auto_placed": true
+        },
+        {
+            "channel": 81,
+            "position": [
+                -0.231469,
+                0.006231,
+                1.063062
+            ],
+            "label": "Empty.081",
+            "auto_placed": true
+        },
+        {
+            "channel": 82,
+            "position": [
+                -0.234225,
+                0.003357,
+                1.045378
+            ],
+            "label": "Empty.082",
+            "auto_placed": true
+        },
+        {
+            "channel": 83,
+            "position": [
+                -0.237248,
+                0.000217,
+                1.026178
+            ],
+            "label": "Empty.083",
+            "auto_placed": true
+        },
+        {
+            "channel": 84,
+            "position": [
+                -0.239709,
+                -0.003206,
+                1.005591
+            ],
+            "label": "Empty.084",
+            "auto_placed": true
+        },
+        {
+            "channel": 85,
+            "position": [
+                -0.242482,
+                -0.007423,
+                0.981209
+            ],
+            "label": "Empty.085",
+            "auto_placed": true
+        },
+        {
+            "channel": 86,
+            "position": [
+                -0.244826,
+                -0.010794,
+                0.960448
+            ],
+            "label": "Empty.086",
+            "auto_placed": true
+        },
+        {
+            "channel": 87,
+            "position": [
+                -0.247408,
+                -0.014226,
+                0.939168
+            ],
+            "label": "Empty.087",
+            "auto_placed": true
+        },
+        {
+            "channel": 88,
+            "position": [
+                -0.251124,
+                -0.017919,
+                0.916221
+            ],
+            "label": "Empty.088",
+            "auto_placed": true
+        },
+        {
+            "channel": 89,
+            "position": [
+                -0.254816,
+                -0.021514,
+                0.893249
+            ],
+            "label": "Empty.089",
+            "auto_placed": true
+        },
+        {
+            "channel": 90,
+            "position": [
+                -0.230184,
+                0.00773,
+                1.126468
+            ],
+            "label": "Empty.090",
+            "auto_placed": true
+        },
+        {
+            "channel": 91,
+            "position": [
+                -0.233002,
+                0.007911,
+                1.112218
+            ],
+            "label": "Empty.091",
+            "auto_placed": true
+        },
+        {
+            "channel": 92,
+            "position": [
+                -0.235,
+                0.00673,
+                1.093847
+            ],
+            "label": "Empty.092",
+            "auto_placed": true
+        },
+        {
+            "channel": 93,
+            "position": [
+                -0.237027,
+                0.005439,
+                1.075884
+            ],
+            "label": "Empty.093",
+            "auto_placed": true
+        },
+        {
+            "channel": 94,
+            "position": [
+                -0.239258,
+                0.003523,
+                1.056096
+            ],
+            "label": "Empty.094",
+            "auto_placed": true
+        },
+        {
+            "channel": 95,
+            "position": [
+                -0.241671,
+                0.001916,
+                1.03819
+            ],
+            "label": "Empty.095",
+            "auto_placed": true
+        },
+        {
+            "channel": 96,
+            "position": [
+                -0.244499,
+                -0.000196,
+                1.018588
+            ],
+            "label": "Empty.096",
+            "auto_placed": true
+        },
+        {
+            "channel": 97,
+            "position": [
+                -0.247067,
+                -0.002927,
+                0.997695
+            ],
+            "label": "Empty.097",
+            "auto_placed": true
+        },
+        {
+            "channel": 98,
+            "position": [
+                -0.250096,
+                -0.006654,
+                0.973219
+            ],
+            "label": "Empty.098",
+            "auto_placed": true
+        },
+        {
+            "channel": 99,
+            "position": [
+                -0.252666,
+                -0.009787,
+                0.952431
+            ],
+            "label": "Empty.099",
+            "auto_placed": true
+        },
+        {
+            "channel": 100,
+            "position": [
+                -0.255575,
+                -0.013159,
+                0.931009
+            ],
+            "label": "Empty.100",
+            "auto_placed": true
+        },
+        {
+            "channel": 101,
+            "position": [
+                -0.25901,
+                -0.01689,
+                0.90805
+            ],
+            "label": "Empty.101",
+            "auto_placed": true
+        },
+        {
+            "channel": 102,
+            "position": [
+                -0.262461,
+                -0.020766,
+                0.885125
+            ],
+            "label": "Empty.102",
+            "auto_placed": true
+        },
+        {
+            "channel": 103,
+            "position": [
+                -0.184375,
+                0.034821,
+                1.117931
+            ],
+            "label": "Empty.103",
+            "auto_placed": true
+        },
+        {
+            "channel": 104,
+            "position": [
+                -0.184965,
+                0.03248,
+                1.106731
+            ],
+            "label": "Empty.104",
+            "auto_placed": true
+        },
+        {
+            "channel": 105,
+            "position": [
+                -0.186719,
+                0.028734,
+                1.091911
+            ],
+            "label": "Empty.105",
+            "auto_placed": true
+        },
+        {
+            "channel": 106,
+            "position": [
+                -0.189542,
+                0.023736,
+                1.074779
+            ],
+            "label": "Empty.106",
+            "auto_placed": true
+        },
+        {
+            "channel": 107,
+            "position": [
+                -0.193026,
+                0.018867,
+                1.055542
+            ],
+            "label": "Empty.107",
+            "auto_placed": true
+        },
+        {
+            "channel": 108,
+            "position": [
+                -0.196789,
+                0.014607,
+                1.038287
+            ],
+            "label": "Empty.108",
+            "auto_placed": true
+        },
+        {
+            "channel": 109,
+            "position": [
+                -0.201298,
+                0.010094,
+                1.019572
+            ],
+            "label": "Empty.109",
+            "auto_placed": true
+        },
+        {
+            "channel": 110,
+            "position": [
+                -0.206079,
+                0.006515,
+                0.999306
+            ],
+            "label": "Empty.110",
+            "auto_placed": true
+        },
+        {
+            "channel": 111,
+            "position": [
+                -0.211739,
+                0.002501,
+                0.975235
+            ],
+            "label": "Empty.111",
+            "auto_placed": true
+        },
+        {
+            "channel": 112,
+            "position": [
+                -0.217463,
+                -0.000566,
+                0.954823
+            ],
+            "label": "Empty.112",
+            "auto_placed": true
+        },
+        {
+            "channel": 113,
+            "position": [
+                -0.22383,
+                -0.003788,
+                0.933964
+            ],
+            "label": "Empty.113",
+            "auto_placed": true
+        },
+        {
+            "channel": 114,
+            "position": [
+                -0.23127,
+                -0.008099,
+                0.911612
+            ],
+            "label": "Empty.114",
+            "auto_placed": true
+        },
+        {
+            "channel": 115,
+            "position": [
+                -0.238995,
+                -0.011868,
+                0.889175
+            ],
+            "label": "Empty.115",
+            "auto_placed": true
+        },
+        {
+            "channel": 116,
+            "position": [
+                -0.192217,
+                0.028405,
+                1.117237
+            ],
+            "label": "Empty.116",
+            "auto_placed": true
+        },
+        {
+            "channel": 117,
+            "position": [
+                -0.193173,
+                0.023138,
+                1.103957
+            ],
+            "label": "Empty.117",
+            "auto_placed": true
+        },
+        {
+            "channel": 118,
+            "position": [
+                -0.19463,
+                0.018323,
+                1.086318
+            ],
+            "label": "Empty.118",
+            "auto_placed": true
+        },
+        {
+            "channel": 119,
+            "position": [
+                -0.196662,
+                0.013806,
+                1.069066
+            ],
+            "label": "Empty.119",
+            "auto_placed": true
+        },
+        {
+            "channel": 120,
+            "position": [
+                -0.199473,
+                0.009219,
+                1.049937
+            ],
+            "label": "Empty.120",
+            "auto_placed": true
+        },
+        {
+            "channel": 121,
+            "position": [
+                -0.202943,
+                0.004875,
+                1.032763
+            ],
+            "label": "Empty.121",
+            "auto_placed": true
+        },
+        {
+            "channel": 122,
+            "position": [
+                -0.207397,
+                0.000243,
+                1.013917
+            ],
+            "label": "Empty.122",
+            "auto_placed": true
+        },
+        {
+            "channel": 123,
+            "position": [
+                -0.212161,
+                -0.003734,
+                0.993569
+            ],
+            "label": "Empty.123",
+            "auto_placed": true
+        },
+        {
+            "channel": 124,
+            "position": [
+                -0.217847,
+                -0.00804,
+                0.969548
+            ],
+            "label": "Empty.124",
+            "auto_placed": true
+        },
+        {
+            "channel": 125,
+            "position": [
+                -0.223482,
+                -0.01099,
+                0.949098
+            ],
+            "label": "Empty.125",
+            "auto_placed": true
+        },
+        {
+            "channel": 126,
+            "position": [
+                -0.229803,
+                -0.013756,
+                0.927963
+            ],
+            "label": "Empty.126",
+            "auto_placed": true
+        },
+        {
+            "channel": 127,
+            "position": [
+                -0.236872,
+                -0.016432,
+                0.90522
+            ],
+            "label": "Empty.127",
+            "auto_placed": true
+        },
+        {
+            "channel": 128,
+            "position": [
+                -0.243857,
+                -0.018375,
+                0.882305
+            ],
+            "label": "Empty.128",
+            "auto_placed": true
         }
     ]
 }

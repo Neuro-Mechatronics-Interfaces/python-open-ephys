@@ -120,6 +120,7 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
             name=f"label_{ch}",
             pickable=False,
         )
+
     muscles = {
         "names": mesh_names,
         "intervals": mesh_intervals,
@@ -132,7 +133,7 @@ def build_scene(viz_params, plotter, model_path, sensor_positions, sigma, radius
 
 def main():
     parser = argparse.ArgumentParser(description="3D EMG Surface Heatmap Viewer")
-    parser.add_argument("--model", type=str, default="./models/forearm_muscles/",
+    parser.add_argument("--model", type=str, default="./models/forearm/muscles/",
                         help="Path to 3D model file (.stl, .obj, .glb, .ply)")
     parser.add_argument("--config", type=str, default="./sensor_config.json",
                         help="Path to sensor_config.json with sensor positions")

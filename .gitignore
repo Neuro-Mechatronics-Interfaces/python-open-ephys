@@ -97,3 +97,7 @@ python_open_ephys-*
 *.npy
 *.log
 /scripts/
+
+# C++ build artifacts
+cpp/vcpkg_installed/
+cpp/build/

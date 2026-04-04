@@ -1,0 +1,15 @@
+{
+  "name": "emg-3d-heatmap",
+  "version-string": "1.0.0",
+  "dependencies": [
+    {
+      "name": "vtk",
+      "features": ["qt"]
+    },
+    "qtbase",
+    "zeromq",
+    "cppzmq",
+    "nlohmann-json",
+    "eigen3"
+  ]
+}
