@@ -13,6 +13,7 @@
 #include <vtkScalarBarActor.h>
 #include <vtkFloatArray.h>
 #include <vtkBillboardTextActor3D.h>
+#include <vtkStaticCellLocator.h>
 
 struct MuscleInfo {
     std::string name;
@@ -41,7 +42,10 @@ public:
     // Load all STL files from directory, merge, compute RBF weights
     void loadModel(const std::string& modelDir,
                    const std::vector<int>& channels,
-                   const Eigen::MatrixXd& sensorPoints);
+                   const Eigen::MatrixXd& sensorPoints,
+                   const Eigen::Vector3d& axisOrigin = Eigen::Vector3d::Zero(),
+                   const Eigen::Vector3d& axisDir = Eigen::Vector3d(0, 0, 1),
+                   bool hasAxis = false);
 
     // Load an auxiliary part group (bones, ligaments, nerves) from a directory
     void loadPartGroup(const std::string& dir, const std::string& name,
@@ -70,8 +74,20 @@ public:
     void setSensorMarkersVisible(bool visible);
     bool sensorMarkersVisible() const { return m_sensorMarkersVisible; }
 
+    // Fascia rotation: rotate sensors around forearm axis and recompute RBF
+    void setFasciaRotation(double angleDeg);
+
     // Camera helpers
     Eigen::Vector3d sensorCentroid() const;
+
+    // Calibration: compute angular position of each muscle centroid
+    // Returns (muscle_display_name, angle_degrees) pairs
+    std::vector<std::pair<std::string, double>> computeMuscleAngularPositions() const;
+
+    // Accessors for calibration
+    const Eigen::Vector3d& forearmAxisOrigin() const { return m_forearmAxisOrigin; }
+    const Eigen::Vector3d& forearmAxisDir() const { return m_forearmAxisDir; }
+    const Eigen::MatrixXd& baseSensorPoints() const { return m_baseSensorPoints; }
 
     int sensorCount() const { return static_cast<int>(m_channels.size()); }
     const std::vector<int>& channels() const { return m_channels; }
@@ -95,10 +111,16 @@ private:
     vtkSmartPointer<vtkScalarBarActor> m_scalarBar;
     vtkSmartPointer<vtkFloatArray>     m_scalarsArray;
 
+    // Radial raycast: project sensor positions onto muscle mesh surface
+    Eigen::Vector3d projectRadiallyToMesh(const Eigen::Vector3d& pt) const;
+
     // RBF precomputed data
     Eigen::MatrixXd m_weightsInRange; // (numInRange x nSensors) - sub-matrix of in-range rows
     std::vector<int> m_inRangeIndices;
     int m_nMeshPoints = 0;
+
+    // Cell locator for radial raycast
+    vtkSmartPointer<vtkStaticCellLocator> m_cellLocator;
 
     // Muscles
     std::vector<MuscleInfo> m_muscles;
@@ -108,7 +130,14 @@ private:
 
     // Sensors
     std::vector<int> m_channels;
-    Eigen::MatrixXd  m_sensorPoints;
+    Eigen::MatrixXd  m_sensorPoints;        // current (rotated) positions
+    Eigen::MatrixXd  m_baseSensorPoints;    // original unrotated positions
+    Eigen::MatrixXd  m_meshPoints;          // cached mesh vertex positions
+    Eigen::Vector3d  m_forearmAxisOrigin;
+    Eigen::Vector3d  m_forearmAxisDir;
+    Eigen::Vector3d  m_basisU;   // perpendicular frame for angular computation
+    Eigen::Vector3d  m_basisV;
+    double           m_currentFasciaAngle = 0.0;
     vtkSmartPointer<vtkActor> m_sensorGlyphActor;
     std::vector<vtkSmartPointer<vtkBillboardTextActor3D>> m_sensorLabels;
     bool m_sensorMarkersVisible = true;

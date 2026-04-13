@@ -1,3 +1,6 @@
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include "HeatmapScene.h"
 
 #include <filesystem>
@@ -116,10 +119,14 @@ void HeatmapScene::buildLookupTable()
 
 void HeatmapScene::loadModel(const std::string& modelDir,
                               const std::vector<int>& channels,
-                              const Eigen::MatrixXd& sensorPoints)
+                              const Eigen::MatrixXd& sensorPoints,
+                              const Eigen::Vector3d& axisOrigin,
+                              const Eigen::Vector3d& axisDir,
+                              bool hasAxis)
 {
     m_channels = channels;
     m_sensorPoints = sensorPoints;
+    m_baseSensorPoints = sensorPoints;  // store unrotated originals
 
     auto appendFilter = vtkSmartPointer<vtkAppendPolyData>::New();
     int vertexStart = 0;
@@ -183,22 +190,67 @@ void HeatmapScene::loadModel(const std::string& modelDir,
         m_scalarsArray->SetValue(i, static_cast<float>(m_params.climMin));
     m_mesh->GetPointData()->SetScalars(m_scalarsArray);
 
-    // RBF weight computation
-    Eigen::MatrixXd meshPts(m_nMeshPoints, 3);
+    // RBF weight computation — cache mesh points for rotation recompute
+    m_meshPoints.resize(m_nMeshPoints, 3);
     for (int i = 0; i < m_nMeshPoints; ++i) {
         double p[3];
         m_mesh->GetPoint(i, p);
-        meshPts(i, 0) = p[0];
-        meshPts(i, 1) = p[1];
-        meshPts(i, 2) = p[2];
+        m_meshPoints(i, 0) = p[0];
+        m_meshPoints(i, 1) = p[1];
+        m_meshPoints(i, 2) = p[2];
     }
-    computeRbfWeights(meshPts, sensorPoints);
+
+    // Forearm axis: prefer config-provided axis, else estimate from mesh
+    if (hasAxis) {
+        m_forearmAxisOrigin = axisOrigin;
+        m_forearmAxisDir = axisDir.normalized();
+        std::cout << "Forearm axis (from config): origin=(" << m_forearmAxisOrigin.transpose()
+                  << ") dir=(" << m_forearmAxisDir.transpose() << ")\n";
+    } else {
+        m_forearmAxisOrigin = m_meshPoints.colwise().mean();
+        Eigen::MatrixXd centered = m_meshPoints.rowwise() - m_forearmAxisOrigin.transpose();
+        Eigen::JacobiSVD<Eigen::MatrixXd> svd(centered, Eigen::ComputeThinV);
+        m_forearmAxisDir = svd.matrixV().col(0);
+        if (m_forearmAxisDir.z() < 0) m_forearmAxisDir = -m_forearmAxisDir;
+        m_forearmAxisDir.normalize();
+        std::cout << "Forearm axis (estimated): origin=(" << m_forearmAxisOrigin.transpose()
+                  << ") dir=(" << m_forearmAxisDir.transpose() << ")\n";
+    }
+
+    // Build perpendicular basis frame (must match Python's build_perp_frame)
+    if (std::abs(m_forearmAxisDir.x()) < 0.9)
+        m_basisU = m_forearmAxisDir.cross(Eigen::Vector3d(1, 0, 0)).normalized();
+    else
+        m_basisU = m_forearmAxisDir.cross(Eigen::Vector3d(0, 1, 0)).normalized();
+    m_basisV = m_forearmAxisDir.cross(m_basisU).normalized();
+    std::cout << "Perpendicular basis: U=(" << m_basisU.transpose()
+              << ") V=(" << m_basisV.transpose() << ")\n";
+
+    // Build cell locator for radial raycast
+    m_cellLocator = vtkSmartPointer<vtkStaticCellLocator>::New();
+    m_cellLocator->SetDataSet(m_mesh);
+    m_cellLocator->BuildLocator();
+
+    // Project initial sensor positions onto muscle surface (radial snap)
+    int nSensors = static_cast<int>(m_sensorPoints.rows());
+    int projected = 0;
+    for (int i = 0; i < nSensors; ++i) {
+        Eigen::Vector3d pt = m_sensorPoints.row(i);
+        Eigen::Vector3d snapped = projectRadiallyToMesh(pt);
+        if ((snapped - pt).norm() > 1e-9) ++projected;
+        m_sensorPoints.row(i) = snapped;
+        m_baseSensorPoints.row(i) = snapped;
+    }
+    std::cout << "Initial projection: " << projected << "/" << nSensors
+              << " sensors snapped to mesh surface\n";
+
+    computeRbfWeights(m_meshPoints, m_sensorPoints);
 
     // Create mapper + actor
     rebuildMeshActor();
 
     // Sensor markers and labels
-    addSensorMarkers(sensorPoints, channels);
+    addSensorMarkers(m_sensorPoints, channels);
 
     std::cout << "Loaded " << m_muscles.size() << " muscles, "
               << m_nMeshPoints << " total vertices\n";
@@ -224,15 +276,30 @@ void HeatmapScene::rebuildMeshActor()
     m_actor->GetProperty()->SetOpacity(1.0);
     m_renderer->AddActor(m_actor);
 
-    // Scalar bar
+    // Scalar bar — thin, clinical style
     m_scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
     m_scalarBar->SetLookupTable(m_lut);
     m_scalarBar->SetTitle("");
     m_scalarBar->SetNumberOfLabels(5);
     m_scalarBar->SetOrientationToVertical();
-    m_scalarBar->SetPosition(0.88, 0.1);
-    m_scalarBar->SetWidth(0.08);
-    m_scalarBar->SetHeight(0.8);
+    m_scalarBar->SetPosition(0.92, 0.15);
+    m_scalarBar->SetWidth(0.06);
+    m_scalarBar->SetHeight(0.7);
+    m_scalarBar->SetBarRatio(0.3);
+    m_scalarBar->SetTitleRatio(0.0);
+    m_scalarBar->UnconstrainedFontSizeOn();
+    m_scalarBar->GetLabelTextProperty()->SetFontSize(15);
+    m_scalarBar->GetLabelTextProperty()->SetFontFamilyToArial();
+    m_scalarBar->GetLabelTextProperty()->BoldOff();
+    m_scalarBar->GetLabelTextProperty()->ItalicOff();
+    m_scalarBar->GetLabelTextProperty()->ShadowOff();
+    m_scalarBar->GetLabelTextProperty()->SetColor(0.25, 0.25, 0.25);
+    m_scalarBar->GetTitleTextProperty()->SetFontSize(15);
+    m_scalarBar->GetTitleTextProperty()->SetFontFamilyToArial();
+    m_scalarBar->GetTitleTextProperty()->BoldOff();
+    m_scalarBar->GetTitleTextProperty()->ShadowOff();
+    m_scalarBar->GetTitleTextProperty()->SetColor(0.25, 0.25, 0.25);
+    m_scalarBar->SetTextPad(2);
     m_renderer->AddActor2D(m_scalarBar);
 }
 
@@ -313,6 +380,16 @@ void HeatmapScene::setMuscleVisible(int idx, bool visible)
 {
     if (idx < 0 || idx >= static_cast<int>(m_muscles.size())) return;
     m_muscles[idx].visible = visible;
+
+    // Immediately update scalars so the change is visible without waiting for data
+    float* ptr = static_cast<float*>(m_scalarsArray->GetVoidPointer(0));
+    const auto& m = m_muscles[idx];
+    float fillVal = visible ? static_cast<float>(m_params.climMin)
+                            : std::numeric_limits<float>::quiet_NaN();
+    for (int i = m.vertexStart; i < m.vertexEnd; ++i)
+        ptr[i] = fillVal;
+    m_scalarsArray->Modified();
+    m_mesh->Modified();
 }
 
 bool HeatmapScene::isMuscleVisible(int idx) const
@@ -505,4 +582,133 @@ Eigen::Vector3d HeatmapScene::sensorCentroid() const
     if (m_sensorPoints.rows() == 0)
         return Eigen::Vector3d::Zero();
     return m_sensorPoints.colwise().mean();
+}
+
+// ─── Muscle angular positions (for calibration) ───
+
+std::vector<std::pair<std::string, double>> HeatmapScene::computeMuscleAngularPositions() const
+{
+    std::vector<std::pair<std::string, double>> result;
+
+    for (const auto& muscle : m_muscles) {
+        int count = muscle.vertexEnd - muscle.vertexStart;
+        if (count <= 0) continue;
+
+        // Compute centroid of this muscle's vertices
+        Eigen::Vector3d centroid = Eigen::Vector3d::Zero();
+        for (int i = muscle.vertexStart; i < muscle.vertexEnd; ++i)
+            centroid += m_meshPoints.row(i).transpose();
+        centroid /= count;
+
+        // Decompose relative to forearm axis
+        Eigen::Vector3d v = centroid - m_forearmAxisOrigin;
+        double axialLen = v.dot(m_forearmAxisDir);
+        Eigen::Vector3d radial = v - axialLen * m_forearmAxisDir;
+
+        if (radial.norm() < 1e-12) continue;
+
+        // Compute angle using the perpendicular basis (matches Python's build_perp_frame)
+        double u = radial.dot(m_basisU);
+        double vComp = radial.dot(m_basisV);
+        double angleDeg = std::atan2(vComp, u) * 180.0 / M_PI;
+
+        result.push_back({muscle.name, angleDeg});
+    }
+
+    return result;
+}
+
+// ─── Fascia rotation (cylindrical decomposition + radial raycast) ───
+
+static Eigen::Vector3d rodriguesRotate(const Eigen::Vector3d& v,
+                                        const Eigen::Vector3d& k,
+                                        double theta)
+{
+    double cosT = std::cos(theta);
+    double sinT = std::sin(theta);
+    return v * cosT + k.cross(v) * sinT + k * k.dot(v) * (1.0 - cosT);
+}
+
+Eigen::Vector3d HeatmapScene::projectRadiallyToMesh(const Eigen::Vector3d& pt) const
+{
+    // Decompose pt relative to forearm axis
+    Eigen::Vector3d v = pt - m_forearmAxisOrigin;
+    double axialLen = v.dot(m_forearmAxisDir);
+    Eigen::Vector3d radial = v - axialLen * m_forearmAxisDir;
+    double radialDist = radial.norm();
+    if (radialDist < 1e-12) return pt; // on the axis, can't raycast
+
+    Eigen::Vector3d radialDir = radial / radialDist;
+
+    // Ray origin: far outside along the radial direction from the axis point
+    double rayLen = 0.5; // 500mm — well beyond any forearm
+    Eigen::Vector3d axisPoint = m_forearmAxisOrigin + axialLen * m_forearmAxisDir;
+    Eigen::Vector3d rayStart = axisPoint + radialDir * rayLen;
+    Eigen::Vector3d rayEnd   = axisPoint; // toward the axis
+
+    double t = 0.0;
+    double xyz[3] = {0, 0, 0};
+    double pcoords[3] = {0, 0, 0};
+    int subId = 0;
+    vtkIdType cellId = -1;
+
+    double p1[3] = { rayStart.x(), rayStart.y(), rayStart.z() };
+    double p2[3] = { rayEnd.x(),   rayEnd.y(),   rayEnd.z()   };
+
+    int hit = m_cellLocator->IntersectWithLine(p1, p2, 1e-6, t, xyz, pcoords, subId, cellId);
+
+    if (hit) {
+        return Eigen::Vector3d(xyz[0], xyz[1], xyz[2]);
+    }
+
+    // No hit — fall back to the rigidly rotated position
+    return pt;
+}
+
+void HeatmapScene::setFasciaRotation(double angleDeg)
+{
+    if (std::abs(angleDeg - m_currentFasciaAngle) < 0.01)
+        return;
+    m_currentFasciaAngle = angleDeg;
+
+    double theta = angleDeg * 3.14159265358979323846 / 180.0;
+    Eigen::Vector3d k = m_forearmAxisDir.normalized();
+    int n = static_cast<int>(m_baseSensorPoints.rows());
+    int projected = 0;
+
+    Eigen::MatrixXd result(n, 3);
+    for (int i = 0; i < n; ++i) {
+        // 1. Rodrigues rotation around forearm axis
+        Eigen::Vector3d v = m_baseSensorPoints.row(i).transpose() - m_forearmAxisOrigin;
+        Eigen::Vector3d vRot = rodriguesRotate(v, k, theta);
+        Eigen::Vector3d rotatedPt = m_forearmAxisOrigin + vRot;
+
+        // 2. Radial raycast inward to snap to muscle surface
+        Eigen::Vector3d snapped = projectRadiallyToMesh(rotatedPt);
+        if (snapped != rotatedPt) ++projected;
+        result.row(i) = snapped;
+    }
+    m_sensorPoints = result;
+
+    std::cout << "Fascia rotation " << angleDeg << "°: "
+              << projected << "/" << n << " sensors projected to mesh\n";
+
+    // Recompute RBF weights with new sensor positions
+    computeRbfWeights(m_meshPoints, m_sensorPoints);
+
+    // Remove old sensor markers
+    if (m_sensorGlyphActor) {
+        m_renderer->RemoveActor(m_sensorGlyphActor);
+        m_sensorGlyphActor = nullptr;
+    }
+    for (auto& label : m_sensorLabels)
+        m_renderer->RemoveActor(label);
+    m_sensorLabels.clear();
+
+    // Rebuild sensor markers at new positions
+    addSensorMarkers(m_sensorPoints, m_channels);
+
+    // Restore visibility state
+    if (!m_sensorMarkersVisible)
+        setSensorMarkersVisible(false);
 }

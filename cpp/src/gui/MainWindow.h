@@ -1,6 +1,8 @@
 #pragma once
 #include <QMainWindow>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <QDockWidget>
 #include <memory>
 #include <Eigen/Dense>
 
@@ -11,8 +13,10 @@
 #include <QVTKOpenGLNativeWidget.h>
 
 class ControlPanel;
+class CalibrationPanel;
 class HeatmapScene;
 class ZmqClient;
+class CalibrationEngine;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -35,7 +39,6 @@ public:
 
     vtkRenderer* renderer() { return m_renderer; }
     HeatmapScene* scene() { return m_scene.get(); }
-    bool isSelectionLocked() const;
 
 public slots:
     void onUpdate();
@@ -60,9 +63,9 @@ private:
     vtkSmartPointer<vtkRenderer>                 m_renderer;
 
     // App components
-    std::unique_ptr<ZmqClient>    m_client;
-    std::unique_ptr<HeatmapScene> m_scene;
-    ControlPanel*                 m_controlPanel = nullptr;
+    std::unique_ptr<ZmqClient>      m_client;
+    std::unique_ptr<HeatmapScene>   m_scene;
+    ControlPanel*                   m_controlPanel = nullptr;
 
     // State
     QTimer*  m_timer = nullptr;
@@ -74,6 +77,30 @@ private:
     // Sensor config
     std::vector<int> m_sensorChannels;
     int m_nSensors = 0;
+
+    // Calibration
+    CalibrationPanel*                       m_calibrationPanel = nullptr;
+    QDockWidget*                            m_calibrationDock = nullptr;
+    std::unique_ptr<CalibrationEngine>      m_calibEngine;
+
+    enum class CalibState { Off, WaitingForRecord, Recording, Solving, Done };
+    CalibState m_calibState = CalibState::Off;
+    int        m_calibMovementIdx = 0;
+    QElapsedTimer m_calibRecordTimer;
+    std::vector<Eigen::VectorXd> m_calibRmsAccumulator;
+
+    static constexpr int kCalibRecordDurationMs = 3000;
+    static constexpr double kStripActiveThreshold = 10.0;
+
+    void setupCalibration();
+    void startCalibration();
+    void onCalibRecordRequested();
+    void onCalibMovementSkipped();
+    void onCalibAccepted(double thetaDeg);
+    void onCalibRetry();
+    void onCalibCancelled();
+    void finishCalibRecording();
+    void solveCalibration();
 
     // Keep alive
     vtkSmartPointer<vtkOrientationMarkerWidget> m_axesWidget;

@@ -2,6 +2,8 @@
 #include <QAction>
 #include <QHBoxLayout>
 #include <QFrame>
+#include <cmath>
+#include <algorithm>
 
 static QFrame* makeSeparator(QWidget* parent) {
     auto* line = new QFrame(parent);
@@ -146,6 +148,26 @@ ControlPanel::ControlPanel(int initialWindowMs, QWidget* parent)
     });
     layout->addWidget(m_sensorsBtn);
 
+    layout->addWidget(makeSeparator(this));
+
+    // Fascia rotation slider
+    m_fasciaLabel = new QLabel("Fascia Rotation: 0°", this);
+    m_fasciaLabel->setStyleSheet("font-size: 11px; padding-left: 4px;");
+    layout->addWidget(m_fasciaLabel);
+
+    m_fasciaSlider = new QSlider(Qt::Horizontal, this);
+    m_fasciaSlider->setRange(-180, 180);
+    m_fasciaSlider->setValue(0);
+    m_fasciaSlider->setSingleStep(1);
+    m_fasciaSlider->setPageStep(10);
+    m_fasciaSlider->setMinimumHeight(24);
+    m_fasciaSlider->setToolTip("Rotate sensor sleeve on fascia surface");
+    connect(m_fasciaSlider, &QSlider::valueChanged, this, [this](int val) {
+        m_fasciaLabel->setText(QString("Fascia Rotation: %1°").arg(val));
+        emit fasciaRotationChanged(static_cast<double>(val));
+    });
+    layout->addWidget(m_fasciaSlider);
+
     layout->addStretch();
 }
 
@@ -179,4 +201,11 @@ void ControlPanel::setMuscleChecked(int idx, bool checked)
 void ControlPanel::setActiveVizFunction(const QString& name)
 {
     m_activeVizLabel->setText("Active: " + name + " (mV)");
+}
+
+void ControlPanel::setFasciaSliderValue(double deg)
+{
+    int val = static_cast<int>(std::round(deg));
+    val = std::clamp(val, -180, 180);
+    m_fasciaSlider->setValue(val);
 }

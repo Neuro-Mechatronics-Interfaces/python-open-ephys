@@ -78,9 +78,17 @@ int main(int argc, char* argv[])
     cfg.radius     = getArgD(argc, argv, "--radius",     0.01);
     cfg.climMin    = getArgD(argc, argv, "--clim-min",   0.0);
     cfg.climMax    = getArgD(argc, argv, "--clim-max",   50.0);
-
-    MainWindow window(cfg);
-    window.show();
-
-    return app.exec();
+    std::cerr << "[main] Starting MainWindow..." << std::endl;
+    try {
+        MainWindow window(cfg);
+        std::cerr << "[main] MainWindow created, showing..." << std::endl;
+        window.show();
+        return app.exec();
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        return 1;
+    } catch (...) {
+        std::cerr << "Fatal error: unknown exception" << std::endl;
+        return 1;
+    }
 }

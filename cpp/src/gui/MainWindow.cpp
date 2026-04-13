@@ -1,8 +1,14 @@
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include "MainWindow.h"
 #include "ControlPanel.h"
+#include "CalibrationPanel.h"
 #include "HeatmapScene.h"
 #include "SensorConfig.h"
 #include "ZmqClient.h"
+#include "CalibrationEngine.h"
+#include "CalibrationData.h"
 
 #include <QDockWidget>
 #include <iostream>
@@ -20,7 +26,7 @@
 #include <vtkCommand.h>
 #include <vtkCell.h>
 
-// ─── Cell-pick callback ───
+// ─── Cell-pick callback (click mesh to toggle muscle) ───
 
 class PickCallback : public vtkCommand {
 public:
@@ -28,9 +34,7 @@ public:
     vtkTypeMacro(PickCallback, vtkCommand);
     void setMainWindow(MainWindow* w) { m_window = w; }
 
-    void Execute(vtkObject* caller, unsigned long /*eventId*/, void*) override {
-        if (m_window->isSelectionLocked()) return;
-
+    void Execute(vtkObject* caller, unsigned long, void*) override {
         auto* interactor = static_cast<vtkRenderWindowInteractor*>(caller);
         int x, y;
         interactor->GetEventPosition(x, y);
@@ -99,6 +103,18 @@ MainWindow::MainWindow(const AppConfig& config, QWidget* parent)
             });
     connect(m_controlPanel, &ControlPanel::windowMsChanged,
             this, &MainWindow::onWindowMsChanged);
+    connect(m_controlPanel, &ControlPanel::fasciaRotationChanged,
+            this, [this](double angle) {
+                m_scene->setFasciaRotation(angle);
+                m_renderWindow->Render();
+            });
+
+    // Calibration panel (left dock)
+    try {
+        setupCalibration();
+    } catch (const std::exception& e) {
+        std::cerr << "[Calibration] Setup failed: " << e.what() << std::endl;
+    }
 
     // Update timer
     m_timer = new QTimer(this);
@@ -152,7 +168,7 @@ void MainWindow::setupScene()
     SensorConfig sc = SensorConfig::load(m_config.configPath);
     m_sensorChannels = sc.channels;
     m_nSensors = static_cast<int>(sc.channels.size());
-    std::cout << "Loaded " << m_nSensors << " sensors from " << m_config.configPath << "\n";
+    std::cerr << "[setupScene] Loaded " << m_nSensors << " sensors from " << m_config.configPath << std::endl;
 
     // Create scene
     HeatmapScene::Params sp;
@@ -161,7 +177,8 @@ void MainWindow::setupScene()
     sp.climMin = m_config.climMin;
     sp.climMax = m_config.climMax;
     m_scene = std::make_unique<HeatmapScene>(m_renderer, sp);
-    m_scene->loadModel(m_config.modelPath, sc.channels, sc.positions);
+    m_scene->loadModel(m_config.modelPath, sc.channels, sc.positions,
+                       sc.forearmAxisOrigin, sc.forearmAxisDir, sc.hasForearmAxis);
 
     // Load auxiliary part groups from sibling dirs of muscle path
     namespace fs = std::filesystem;
@@ -175,6 +192,7 @@ void MainWindow::setupScene()
               << "' baseDir='" << baseDir.string() << "'\n";
     std::cerr.flush();
     m_scene->loadPartGroup((baseDir / "bones").string(),      "Bones",      0.9, 0.9, 0.85, 0.5);
+    m_scene->loadPartGroup((baseDir / "hand_bones").string(),"Hand Bones", 0.9, 0.9, 0.85, 0.5);
     m_scene->loadPartGroup((baseDir / "ligaments").string(), "Ligaments",  0.4, 0.7, 0.4,  0.5);
     m_scene->loadPartGroup((baseDir / "membranes").string(), "Membranes",  0.6, 0.5, 0.7,  0.4);
     m_scene->loadPartGroup((baseDir / "arteries").string(),  "Arteries",   0.8, 0.15, 0.15, 0.6);
@@ -189,6 +207,7 @@ void MainWindow::setupScene()
     m_client->start();
     std::cout << "ZMQ client started, connecting to " << m_config.host
               << ":" << m_config.port << " ...\n";
+
 }
 
 // ─── Camera Setup ───
@@ -216,6 +235,16 @@ void MainWindow::setupPicking()
 
 void MainWindow::onUpdate()
 {
+    // Calibration timer runs independently of ZMQ data
+    if (m_calibState == CalibState::Recording) {
+        double elapsed = m_calibRecordTimer.elapsed();
+        double fraction = elapsed / static_cast<double>(kCalibRecordDurationMs);
+        m_calibrationPanel->setProgress(std::min(fraction, 1.0));
+
+        if (elapsed >= kCalibRecordDurationMs)
+            finishCalibRecording();
+    }
+
     if (!m_client || !m_client->isReady())
         return;
 
@@ -259,6 +288,12 @@ void MainWindow::onUpdate()
     }
 
     m_scene->updateScalars(sensorValues);
+
+    // Calibration recording: accumulate per-sensor RMS each frame
+    if (m_calibState == CalibState::Recording) {
+        m_calibRmsAccumulator.push_back(sensorValues);
+    }
+
     m_renderWindow->Render();
 }
 
@@ -292,10 +327,6 @@ void MainWindow::onMuscleToggled(int idx, bool visible)
     m_renderWindow->Render();
 }
 
-bool MainWindow::isSelectionLocked() const
-{
-    return m_controlPanel && m_controlPanel->isLocked();
-}
 
 void MainWindow::onVizFunctionChanged(const QString& name)
 {
@@ -312,10 +343,241 @@ void MainWindow::onVizFunctionChanged(const QString& name)
 void MainWindow::onPartToggled(const QString& name, bool visible)
 {
     m_scene->setPartVisible(name.toStdString(), visible);
+    // Toggle hand bones together with forearm bones
+    if (name == "Bones")
+        m_scene->setPartVisible("Hand Bones", visible);
     m_renderWindow->Render();
 }
 
 void MainWindow::onWindowMsChanged(int ms)
 {
     m_config.windowMs = ms;
+}
+
+// ─── Calibration ───
+
+void MainWindow::setupCalibration()
+{
+    m_calibrationPanel = new CalibrationPanel();
+    m_calibrationDock = new QDockWidget("Calibration", this);
+    m_calibrationDock->setWidget(m_calibrationPanel);
+    m_calibrationDock->setMinimumWidth(300);
+    addDockWidget(Qt::LeftDockWidgetArea, m_calibrationDock);
+
+    // Populate movements
+    auto movements = CalibrationData::getMovements();
+    std::vector<std::pair<std::string, std::string>> movePairs;
+    for (const auto& m : movements)
+        movePairs.push_back({m.name, m.instruction});
+    m_calibrationPanel->setMovements(movePairs);
+
+    // Connect signals
+    connect(m_calibrationPanel, &CalibrationPanel::recordingRequested,
+            this, &MainWindow::onCalibRecordRequested);
+    connect(m_calibrationPanel, &CalibrationPanel::movementSkipped,
+            this, &MainWindow::onCalibMovementSkipped);
+    connect(m_calibrationPanel, &CalibrationPanel::calibrationAccepted,
+            this, &MainWindow::onCalibAccepted);
+    connect(m_calibrationPanel, &CalibrationPanel::calibrationRetryRequested,
+            this, &MainWindow::onCalibRetry);
+    connect(m_calibrationPanel, &CalibrationPanel::calibrationCancelled,
+            this, &MainWindow::onCalibCancelled);
+
+    startCalibration();
+}
+
+void MainWindow::startCalibration()
+{
+    // Initialize calibration engine
+    m_calibEngine = std::make_unique<CalibrationEngine>();
+
+    // Get muscle angular positions from the 3D scene
+    auto muscleAngles = m_scene->computeMuscleAngularPositions();
+    std::cout << "Muscle angular positions:\n";
+    for (const auto& [name, angle] : muscleAngles)
+        std::cout << "  " << name << ": " << angle << " deg\n";
+
+    // Map display names to group names and compute group centroids
+    auto groupMappings = CalibrationData::getMuscleGroupMappings();
+    std::map<std::string, std::vector<double>> groupAngles;
+    for (const auto& [displayName, angle] : muscleAngles) {
+        for (const auto& gm : groupMappings) {
+            for (const auto& bn : gm.blenderNames) {
+                if (bn == displayName) {
+                    groupAngles[gm.groupName].push_back(angle);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Circular mean of angles per group (handles wrap-around at ±180°)
+    std::vector<CalibrationEngine::MuscleAngularPosition> positions;
+    for (const auto& [groupName, angles] : groupAngles) {
+        double sinSum = 0.0, cosSum = 0.0;
+        for (double a : angles) {
+            double rad = a * M_PI / 180.0;
+            sinSum += std::sin(rad);
+            cosSum += std::cos(rad);
+        }
+        double avgAngle = std::atan2(sinSum, cosSum) * 180.0 / M_PI;
+        positions.push_back({groupName, avgAngle});
+        std::cout << "  Group " << groupName << ": " << avgAngle << " deg ("
+                  << angles.size() << " muscles)\n";
+    }
+    m_calibEngine->setMuscleAngularPositions(positions);
+
+    // Set strip definitions from sensor config's placement data
+    SensorConfig sc = SensorConfig::load(m_config.configPath);
+    auto stripDefs = CalibrationData::getStripDefinitions(sc.stripAnglesDeg);
+    m_calibEngine->setStripDefinitions(stripDefs);
+
+    std::cout << "Strip definitions:\n";
+    for (const auto& s : stripDefs)
+        std::cout << "  Strip " << s.stripId << ": center=" << s.centerAngleDeg
+                  << " deg, ch " << s.channelStart << "-" << s.channelEnd << "\n";
+
+    // Reset UI state
+    m_calibMovementIdx = 0;
+    m_calibState = CalibState::WaitingForRecord;
+    m_calibrationPanel->hideResult();
+    m_calibrationPanel->setCurrentMovement(0);
+    m_calibEngine->clearObservations();
+}
+
+void MainWindow::onCalibRecordRequested()
+{
+    if (m_calibState != CalibState::WaitingForRecord) return;
+
+    m_calibState = CalibState::Recording;
+    m_calibRmsAccumulator.clear();
+    m_calibRecordTimer.start();
+    m_calibrationPanel->setRecording(true);
+
+    auto movements = CalibrationData::getMovements();
+    if (m_calibMovementIdx < static_cast<int>(movements.size()))
+        std::cout << "Recording: " << movements[m_calibMovementIdx].name << "...\n";
+}
+
+void MainWindow::finishCalibRecording()
+{
+    m_calibState = CalibState::WaitingForRecord;
+    m_calibrationPanel->setRecording(false);
+
+    if (m_calibRmsAccumulator.empty()) {
+        std::cout << "No data recorded, try again.\n";
+        return;
+    }
+
+    // Compute average per-sensor RMS over the recording period
+    int nSensors = static_cast<int>(m_calibRmsAccumulator[0].size());
+    Eigen::VectorXd avgRms = Eigen::VectorXd::Zero(nSensors);
+    for (const auto& frame : m_calibRmsAccumulator)
+        avgRms += frame;
+    avgRms /= m_calibRmsAccumulator.size();
+
+    // Compute per-strip average RMS
+    auto strips = m_calibEngine->strips();
+    int nStrips = static_cast<int>(strips.size());
+
+    MovementObservation obs;
+    obs.movementIndex = m_calibMovementIdx;
+    obs.stripRmsValues.resize(nStrips, 0.0);
+    obs.stripActive.resize(nStrips, false);
+
+    for (int s = 0; s < nStrips; ++s) {
+        double sum = 0.0;
+        int count = 0;
+        // Map strip channels to sensor indices
+        for (int ch = strips[s].channelStart; ch < strips[s].channelEnd; ++ch) {
+            // Find sensor index for this channel
+            for (int si = 0; si < m_nSensors; ++si) {
+                if (m_sensorChannels[si] == ch) {
+                    sum += avgRms(si);
+                    ++count;
+                    break;
+                }
+            }
+        }
+        obs.stripRmsValues[s] = (count > 0) ? sum / count : 0.0;
+        obs.stripActive[s] = obs.stripRmsValues[s] > kStripActiveThreshold;
+    }
+
+    std::cout << "Movement " << m_calibMovementIdx << " strip RMS:";
+    for (int s = 0; s < nStrips; ++s)
+        std::cout << " S" << (s+1) << "=" << obs.stripRmsValues[s]
+                  << (obs.stripActive[s] ? "*" : "");
+    std::cout << "\n";
+
+    m_calibEngine->addObservation(obs);
+    m_calibrationPanel->setMovementComplete(m_calibMovementIdx);
+
+    // Advance to next movement
+    m_calibMovementIdx++;
+    auto movements = CalibrationData::getMovements();
+    if (m_calibMovementIdx >= static_cast<int>(movements.size())) {
+        solveCalibration();
+    } else {
+        m_calibrationPanel->setCurrentMovement(m_calibMovementIdx);
+    }
+}
+
+void MainWindow::onCalibMovementSkipped()
+{
+    if (m_calibState != CalibState::WaitingForRecord) return;
+
+    m_calibrationPanel->setMovementComplete(m_calibMovementIdx);
+    m_calibMovementIdx++;
+
+    auto movements = CalibrationData::getMovements();
+    if (m_calibMovementIdx >= static_cast<int>(movements.size())) {
+        solveCalibration();
+    } else {
+        m_calibrationPanel->setCurrentMovement(m_calibMovementIdx);
+    }
+}
+
+void MainWindow::solveCalibration()
+{
+    m_calibState = CalibState::Solving;
+
+    if (m_calibEngine->observationCount() == 0) {
+        std::cout << "No observations recorded, cannot solve.\n";
+        m_calibState = CalibState::WaitingForRecord;
+        return;
+    }
+
+    auto result = m_calibEngine->solve();
+
+    double confidence = 0.0;
+    if (result.maxPossibleScore > 0.0)
+        confidence = (result.score / result.maxPossibleScore) * 100.0;
+
+    m_calibState = CalibState::Done;
+    m_calibrationPanel->setCurrentMovement(static_cast<int>(CalibrationData::getMovements().size()));
+    m_calibrationPanel->showResult(result.thetaOffsetDeg, confidence);
+}
+
+void MainWindow::onCalibAccepted(double thetaDeg)
+{
+    std::cout << "Calibration accepted: theta=" << thetaDeg << " deg\n";
+
+    // Apply to fascia rotation
+    m_scene->setFasciaRotation(thetaDeg);
+    m_controlPanel->setFasciaSliderValue(thetaDeg);
+    m_renderWindow->Render();
+
+    m_calibState = CalibState::Off;
+    m_calibrationDock->hide();
+}
+
+void MainWindow::onCalibRetry()
+{
+    startCalibration();
+}
+
+void MainWindow::onCalibCancelled()
+{
+    m_calibState = CalibState::Off;
+    m_calibrationDock->hide();
 }

@@ -1,1284 +1,1187 @@
 {
+    "forearm_axis": {
+        "origin": [
+            -0.238689,
+            0.019339,
+            1.0
+        ],
+        "direction": [
+            0.119562,
+            0.213345,
+            0.969633
+        ]
+    },
+    "placement": {
+        "pitch_mm": 19.5,
+        "row_gap_mm": 10.0,
+        "stagger_mm": 9.75,
+        "strip_angles_deg": {
+            "1": -316.5,
+            "2": -244.5,
+            "3": -172.5,
+            "4": -100.5,
+            "5": -28.5
+        },
+        "sensors_per_row": {
+            "1": 13,
+            "2": 13,
+            "3": 12,
+            "4": 13,
+            "5": 13
+        }
+    },
     "sensors": [
         {
             "channel": 1,
             "position": [
-                -0.209763,
-                0.067274,
-                1.11392
+                -0.235445,
+                0.061006,
+                1.111096
             ],
-            "label": "Empty.001",
-            "auto_placed": true
+            "label": "CH1"
         },
         {
             "channel": 2,
             "position": [
-                -0.211271,
-                0.06498,
-                1.102824
+                -0.240053,
+                0.060323,
+                1.091704
             ],
-            "label": "Empty.002",
-            "auto_placed": true
+            "label": "CH2"
         },
         {
             "channel": 3,
             "position": [
-                -0.21293,
-                0.061468,
-                1.08794
+                -0.242502,
+                0.056836,
+                1.072663
             ],
-            "label": "Empty.003",
-            "auto_placed": true
+            "label": "CH3"
         },
         {
             "channel": 4,
             "position": [
-                -0.214522,
-                0.056958,
-                1.07055
+                -0.245342,
+                0.053742,
+                1.053583
             ],
-            "label": "Empty.004",
-            "auto_placed": true
+            "label": "CH4"
         },
         {
             "channel": 5,
             "position": [
-                -0.216681,
-                0.052028,
-                1.051162
+                -0.248803,
+                0.052049,
+                1.034271
             ],
-            "label": "Empty.005",
-            "auto_placed": true
+            "label": "CH5"
         },
         {
             "channel": 6,
             "position": [
-                -0.218681,
-                0.0474,
-                1.033771
+                -0.251553,
+                0.049016,
+                1.015167
             ],
-            "label": "Empty.006",
-            "auto_placed": true
+            "label": "CH6"
         },
         {
             "channel": 7,
             "position": [
-                -0.220884,
-                0.042253,
-                1.014911
+                -0.254237,
+                0.045547,
+                0.996151
             ],
-            "label": "Empty.007",
-            "auto_placed": true
+            "label": "CH7"
         },
         {
             "channel": 8,
             "position": [
-                -0.223902,
-                0.03716,
-                0.994761
+                -0.25644,
+                0.041301,
+                0.977246
             ],
-            "label": "Empty.008",
-            "auto_placed": true
+            "label": "CH8"
         },
         {
             "channel": 9,
             "position": [
-                -0.227596,
-                0.031227,
-                0.97087
+                -0.258221,
+                0.036554,
+                0.958399
             ],
-            "label": "Empty.009",
-            "auto_placed": true
+            "label": "CH9"
         },
         {
             "channel": 10,
             "position": [
-                -0.230918,
-                0.025972,
-                0.950643
+                -0.258676,
+                0.029937,
+                0.939801
             ],
-            "label": "Empty.010",
-            "auto_placed": true
+            "label": "CH10"
         },
         {
             "channel": 11,
             "position": [
-                -0.234252,
-                0.020378,
-                0.929932
+                -0.25857,
+                0.023139,
+                0.921173
             ],
-            "label": "Empty.011",
-            "auto_placed": true
+            "label": "CH11"
         },
         {
             "channel": 12,
             "position": [
-                -0.237159,
-                0.013677,
-                0.907547
+                -0.259063,
+                0.016696,
+                0.90254
             ],
-            "label": "Empty.012",
-            "auto_placed": true
+            "label": "CH12"
         },
         {
             "channel": 13,
             "position": [
-                -0.240223,
-                0.006851,
-                0.885208
+                -0.259974,
+                0.009644,
+                0.884094
             ],
-            "label": "Empty.013",
-            "auto_placed": true
+            "label": "CH13"
         },
         {
             "channel": 14,
             "position": [
-                -0.204667,
-                0.063973,
-                1.110947
+                -0.24492,
+                0.056302,
+                1.103244
             ],
-            "label": "Empty.014",
-            "auto_placed": true
+            "label": "CH14"
         },
         {
             "channel": 15,
             "position": [
-                -0.205033,
-                0.060452,
-                1.097209
+                -0.248832,
+                0.053115,
+                1.084317
             ],
-            "label": "Empty.015",
-            "auto_placed": true
+            "label": "CH15"
         },
         {
             "channel": 16,
             "position": [
-                -0.206762,
-                0.056526,
-                1.079409
+                -0.256485,
+                0.052424,
+                1.065302
             ],
-            "label": "Empty.016",
-            "auto_placed": true
+            "label": "CH16"
         },
         {
             "channel": 17,
             "position": [
-                -0.208604,
-                0.052427,
-                1.06204
+                -0.260677,
+                0.049402,
+                1.046373
             ],
-            "label": "Empty.017",
-            "auto_placed": true
+            "label": "CH17"
         },
         {
             "channel": 18,
             "position": [
-                -0.2109,
-                0.047741,
-                1.04287
+                -0.263495,
+                0.044964,
+                1.027587
             ],
-            "label": "Empty.018",
-            "auto_placed": true
+            "label": "CH18"
         },
         {
             "channel": 19,
             "position": [
-                -0.212911,
-                0.04292,
-                1.025621
+                -0.264613,
+                0.039768,
+                1.008757
             ],
-            "label": "Empty.019",
-            "auto_placed": true
+            "label": "CH19"
         },
         {
             "channel": 20,
             "position": [
-                -0.215218,
-                0.037307,
-                1.006726
+                -0.264627,
+                0.034071,
+                0.989902
             ],
-            "label": "Empty.020",
-            "auto_placed": true
+            "label": "CH20"
         },
         {
             "channel": 21,
             "position": [
-                -0.218231,
-                0.03162,
-                0.986538
+                -0.26706,
+                0.029923,
+                0.971003
             ],
-            "label": "Empty.021",
-            "auto_placed": true
+            "label": "CH21"
         },
         {
             "channel": 22,
             "position": [
-                -0.221959,
-                0.024995,
-                0.962786
+                -0.267062,
+                0.023839,
+                0.952232
             ],
-            "label": "Empty.022",
-            "auto_placed": true
+            "label": "CH22"
         },
         {
             "channel": 23,
             "position": [
-                -0.225544,
-                0.019094,
-                0.942733
+                -0.268676,
+                0.018415,
+                0.933513
             ],
-            "label": "Empty.023",
-            "auto_placed": true
+            "label": "CH23"
         },
         {
             "channel": 24,
             "position": [
-                -0.229377,
-                0.012719,
-                0.922085
+                -0.27146,
+                0.013457,
+                0.914837
             ],
-            "label": "Empty.024",
-            "auto_placed": true
+            "label": "CH24"
         },
         {
             "channel": 25,
             "position": [
-                -0.233597,
-                0.005646,
-                0.899958
+                -0.274745,
+                0.009416,
+                0.89602
             ],
-            "label": "Empty.025",
-            "auto_placed": true
+            "label": "CH25"
         },
         {
             "channel": 26,
             "position": [
-                -0.238258,
-                -0.001333,
-                0.877865
+                -0.277573,
+                0.005698,
+                0.877076
             ],
-            "label": "Empty.026",
-            "auto_placed": true
+            "label": "CH26"
         },
         {
             "channel": 27,
             "position": [
-                -0.234753,
-                0.059085,
-                1.118803
+                -0.254068,
+                0.03745,
+                1.118576
             ],
-            "label": "Empty.027",
-            "auto_placed": true
+            "label": "CH27"
         },
         {
             "channel": 28,
             "position": [
-                -0.238765,
-                0.059621,
-                1.107393
+                -0.261324,
+                0.032091,
+                1.100539
             ],
-            "label": "Empty.028",
-            "auto_placed": true
+            "label": "CH28"
         },
         {
             "channel": 29,
             "position": [
-                -0.242511,
-                0.059014,
-                1.092128
+                -0.264547,
+                0.028126,
+                1.081698
             ],
-            "label": "Empty.029",
-            "auto_placed": true
+            "label": "CH29"
         },
         {
             "channel": 30,
             "position": [
-                -0.245627,
-                0.057681,
-                1.074226
+                -0.267343,
+                0.024065,
+                1.062826
             ],
-            "label": "Empty.030",
-            "auto_placed": true
+            "label": "CH30"
         },
         {
             "channel": 31,
             "position": [
-                -0.24867,
-                0.055254,
-                1.054397
+                -0.26853,
+                0.020595,
+                1.043625
             ],
-            "label": "Empty.031",
-            "auto_placed": true
+            "label": "CH31"
         },
         {
             "channel": 32,
             "position": [
-                -0.250968,
-                0.052744,
-                1.036576
+                -0.265852,
+                0.017696,
+                1.023822
             ],
-            "label": "Empty.032",
-            "auto_placed": true
+            "label": "CH32"
         },
         {
             "channel": 33,
             "position": [
-                -0.252879,
-                0.049425,
-                1.017279
+                -0.263864,
+                0.01443,
+                1.004184
             ],
-            "label": "Empty.033",
-            "auto_placed": true
+            "label": "CH33"
         },
         {
             "channel": 34,
             "position": [
-                -0.255279,
-                0.044786,
-                0.996952
+                -0.267649,
+                0.010048,
+                0.985504
             ],
-            "label": "Empty.034",
-            "auto_placed": true
+            "label": "CH34"
         },
         {
             "channel": 35,
             "position": [
-                -0.25793,
-                0.038633,
-                0.97298
+                -0.271224,
+                0.005821,
+                0.966765
             ],
-            "label": "Empty.035",
-            "auto_placed": true
+            "label": "CH35"
         },
         {
             "channel": 36,
             "position": [
-                -0.259731,
-                0.032712,
-                0.952713
+                -0.272301,
+                0.002298,
+                0.947562
             ],
-            "label": "Empty.036",
-            "auto_placed": true
+            "label": "CH36"
         },
         {
             "channel": 37,
             "position": [
-                -0.261014,
-                0.026224,
-                0.931946
+                -0.273325,
+                -0.000698,
+                0.928237
             ],
-            "label": "Empty.037",
-            "auto_placed": true
+            "label": "CH37"
         },
         {
             "channel": 38,
             "position": [
-                -0.26117,
-                0.019347,
-                0.90926
+                -0.27466,
+                -0.004005,
+                0.909018
             ],
-            "label": "Empty.038",
-            "auto_placed": true
+            "label": "CH38"
         },
         {
             "channel": 39,
             "position": [
-                -0.261118,
-                0.011715,
-                0.886714
+                -0.28061,
+                -0.008495,
+                0.890629
             ],
-            "label": "Empty.039",
-            "auto_placed": true
+            "label": "CH39"
         },
         {
             "channel": 40,
             "position": [
-                -0.2329,
-                0.06213,
-                1.114834
+                -0.257956,
+                0.020068,
+                1.112824
             ],
-            "label": "Empty.040",
-            "auto_placed": true
+            "label": "CH40"
         },
         {
             "channel": 41,
             "position": [
-                -0.234906,
-                0.061855,
-                1.100584
+                -0.26231,
+                0.014185,
+                1.094545
             ],
-            "label": "Empty.041",
-            "auto_placed": true
+            "label": "CH41"
         },
         {
             "channel": 42,
             "position": [
-                -0.237711,
-                0.05992,
-                1.082478
+                -0.255265,
+                0.016178,
+                1.073127
             ],
-            "label": "Empty.042",
-            "auto_placed": true
+            "label": "CH42"
         },
         {
             "channel": 43,
             "position": [
-                -0.240134,
-                0.057582,
-                1.064794
+                -0.252076,
+                0.015833,
+                1.052699
             ],
-            "label": "Empty.043",
-            "auto_placed": true
+            "label": "CH43"
         },
         {
             "channel": 44,
             "position": [
-                -0.242535,
-                0.054315,
-                1.045325
+                -0.255073,
+                0.010715,
+                1.034084
             ],
-            "label": "Empty.044",
-            "auto_placed": true
+            "label": "CH44"
         },
         {
             "channel": 45,
             "position": [
-                -0.244067,
-                0.051067,
-                1.027671
+                -0.255869,
+                0.007546,
+                1.014769
             ],
-            "label": "Empty.045",
-            "auto_placed": true
+            "label": "CH45"
         },
         {
             "channel": 46,
             "position": [
-                -0.245309,
-                0.046969,
-                1.008311
+                -0.258449,
+                0.003226,
+                0.995927
             ],
-            "label": "Empty.046",
-            "auto_placed": true
+            "label": "CH46"
         },
         {
             "channel": 47,
             "position": [
-                -0.246944,
-                0.041889,
-                0.987819
+                -0.261241,
+                -0.001331,
+                0.977163
             ],
-            "label": "Empty.047",
-            "auto_placed": true
+            "label": "CH47"
         },
         {
             "channel": 48,
             "position": [
-                -0.248879,
-                0.035443,
-                0.963807
+                -0.260439,
+                -0.003402,
+                0.957409
             ],
-            "label": "Empty.048",
-            "auto_placed": true
+            "label": "CH48"
         },
         {
             "channel": 49,
             "position": [
-                -0.250308,
-                0.02921,
-                0.94356
+                -0.260253,
+                -0.006202,
+                0.937891
             ],
-            "label": "Empty.049",
-            "auto_placed": true
+            "label": "CH49"
         },
         {
             "channel": 50,
             "position": [
-                -0.25153,
-                0.022283,
-                0.922713
+                -0.260977,
+                -0.009812,
+                0.918664
             ],
-            "label": "Empty.050",
-            "auto_placed": true
+            "label": "CH50"
         },
         {
             "channel": 51,
             "position": [
-                -0.252713,
-                0.014421,
-                0.900385
+                -0.265072,
+                -0.015893,
+                0.900396
             ],
-            "label": "Empty.051",
-            "auto_placed": true
+            "label": "CH51"
         },
         {
             "channel": 52,
             "position": [
-                -0.254329,
-                0.007787,
-                0.87784
+                -0.268289,
+                -0.020714,
+                0.881743
             ],
-            "label": "Empty.052",
-            "auto_placed": true
+            "label": "CH52"
         },
         {
             "channel": 53,
             "position": [
-                -0.254473,
-                0.034701,
-                1.1266
+                -0.227582,
+                0.010666,
+                1.111148
             ],
-            "label": "Empty.053",
-            "auto_placed": false
+            "label": "CH53"
         },
         {
             "channel": 54,
             "position": [
-                -0.258452,
-                0.03103,
-                1.116111
+                -0.229978,
+                0.008795,
+                1.091744
             ],
-            "label": "Empty.054",
-            "auto_placed": false
+            "label": "CH54"
         },
         {
             "channel": 55,
             "position": [
-                -0.263357,
-                0.027042,
-                1.101733
+                -0.232479,
+                0.006786,
+                1.072384
             ],
-            "label": "Empty.055",
-            "auto_placed": false
+            "label": "CH55"
         },
         {
             "channel": 56,
             "position": [
-                -0.267919,
-                0.02372,
-                1.084448
+                -0.234849,
+                0.003812,
+                1.05322
             ],
-            "label": "Empty.056",
-            "auto_placed": false
+            "label": "CH56"
         },
         {
             "channel": 57,
             "position": [
-                -0.271421,
-                0.020044,
-                1.064949
+                -0.237413,
+                0.001532,
+                1.033927
             ],
-            "label": "Empty.057",
-            "auto_placed": false
+            "label": "CH57"
         },
         {
             "channel": 58,
             "position": [
-                -0.272979,
-                0.017359,
-                1.047076
+                -0.239616,
+                3.1e-05,
+                1.014418
             ],
-            "label": "Empty.058",
-            "auto_placed": false
+            "label": "CH58"
         },
         {
             "channel": 59,
             "position": [
-                -0.273937,
-                0.014704,
-                1.027515
+                -0.242022,
+                -0.005101,
+                0.995733
             ],
-            "label": "Empty.059",
-            "auto_placed": false
+            "label": "CH59"
         },
         {
             "channel": 60,
             "position": [
-                -0.273259,
-                0.011007,
-                1.006601
+                -0.244396,
+                -0.009327,
+                0.976845
             ],
-            "label": "Empty.060",
-            "auto_placed": false
+            "label": "CH60"
         },
         {
             "channel": 61,
             "position": [
-                -0.272278,
-                0.006445,
-                0.981832
+                -0.246963,
+                -0.013303,
+                0.957926
             ],
-            "label": "Empty.061",
-            "auto_placed": false
+            "label": "CH61"
         },
         {
             "channel": 62,
             "position": [
-                -0.272068,
-                0.002428,
-                0.960897
+                -0.249554,
+                -0.014918,
+                0.93849
             ],
-            "label": "Empty.062",
-            "auto_placed": false
+            "label": "CH62"
         },
         {
             "channel": 63,
             "position": [
-                -0.271405,
-                -0.001315,
-                0.939286
+                -0.252072,
+                -0.015821,
+                0.918888
             ],
-            "label": "Empty.063",
-            "auto_placed": false
+            "label": "CH63"
         },
         {
             "channel": 64,
             "position": [
-                -0.273038,
-                -0.004739,
-                0.916023
+                -0.254513,
+                -0.01924,
+                0.899831
             ],
-            "label": "Empty.064",
-            "auto_placed": false
+            "label": "CH64"
         },
         {
             "channel": 65,
             "position": [
-                -0.253799,
-                0.041288,
-                1.121996
+                -0.217913,
+                0.012561,
+                1.099483
             ],
-            "label": "Empty.065",
-            "auto_placed": false
+            "label": "CH65"
         },
         {
             "channel": 66,
             "position": [
-                -0.259066,
-                0.039307,
-                1.108524
+                -0.220196,
+                0.009238,
+                1.080385
             ],
-            "label": "Empty.066",
-            "auto_placed": false
+            "label": "CH66"
         },
         {
             "channel": 67,
             "position": [
-                -0.264509,
-                0.035521,
-                1.091151
+                -0.222637,
+                0.005858,
+                1.061319
             ],
-            "label": "Empty.067",
-            "auto_placed": false
+            "label": "CH67"
         },
         {
             "channel": 68,
             "position": [
-                -0.268237,
-                0.032104,
-                1.073865
+                -0.223557,
+                -0.001206,
+                1.042876
             ],
-            "label": "Empty.068",
-            "auto_placed": false
+            "label": "CH68"
         },
         {
             "channel": 69,
             "position": [
-                -0.270523,
-                0.028392,
-                1.054479
+                -0.224919,
+                -0.007299,
+                1.024274
             ],
-            "label": "Empty.069",
-            "auto_placed": false
+            "label": "CH69"
         },
         {
             "channel": 70,
             "position": [
-                -0.271791,
-                0.025708,
-                1.036669
+                -0.227587,
+                -0.0104,
+                1.005174
             ],
-            "label": "Empty.070",
-            "auto_placed": false
+            "label": "CH70"
         },
         {
             "channel": 71,
             "position": [
-                -0.273592,
-                0.023007,
-                1.01707
+                -0.230297,
+                -0.013352,
+                0.986047
             ],
-            "label": "Empty.071",
-            "auto_placed": false
+            "label": "CH71"
         },
         {
             "channel": 72,
             "position": [
-                -0.273915,
-                0.019337,
-                0.996107
+                -0.233178,
+                -0.015566,
+                0.966779
             ],
-            "label": "Empty.072",
-            "auto_placed": false
+            "label": "CH72"
         },
         {
             "channel": 73,
             "position": [
-                -0.274797,
-                0.014809,
-                0.971542
+                -0.235957,
+                -0.017479,
+                0.947432
             ],
-            "label": "Empty.073",
-            "auto_placed": false
+            "label": "CH73"
         },
         {
             "channel": 74,
             "position": [
-                -0.27426,
-                0.010858,
-                0.950552
+                -0.238281,
+                -0.019307,
+                0.92801
             ],
-            "label": "Empty.074",
-            "auto_placed": false
+            "label": "CH74"
         },
         {
             "channel": 75,
             "position": [
-                -0.275202,
-                0.007165,
-                0.928958
+                -0.241108,
+                -0.020803,
+                0.908577
             ],
-            "label": "Empty.075",
-            "auto_placed": false
+            "label": "CH75"
         },
         {
             "channel": 76,
             "position": [
-                -0.277229,
-                0.003736,
-                0.905759
+                -0.244192,
+                -0.023307,
+                0.889398
             ],
-            "label": "Empty.076",
-            "auto_placed": false
+            "label": "CH76"
         },
         {
             "channel": 77,
             "position": [
-                -0.221995,
-                0.016677,
-                1.126561
+                -0.18743,
+                0.029085,
+                1.112199
             ],
-            "label": "Empty.077",
-            "auto_placed": true
+            "label": "CH77"
         },
         {
             "channel": 78,
             "position": [
-                -0.223196,
-                0.015034,
-                1.115283
+                -0.189182,
+                0.024748,
+                1.093259
             ],
-            "label": "Empty.078",
-            "auto_placed": true
+            "label": "CH78"
         },
         {
             "channel": 79,
             "position": [
-                -0.225386,
-                0.012574,
-                1.100234
+                -0.191251,
+                0.020006,
+                1.074447
             ],
-            "label": "Empty.079",
-            "auto_placed": true
+            "label": "CH79"
         },
         {
             "channel": 80,
             "position": [
-                -0.228458,
-                0.009593,
-                1.08269
+                -0.193415,
+                0.015538,
+                1.055586
             ],
-            "label": "Empty.080",
-            "auto_placed": true
+            "label": "CH80"
         },
         {
             "channel": 81,
             "position": [
-                -0.231469,
-                0.006231,
-                1.063062
+                -0.196729,
+                0.011267,
+                1.036823
             ],
-            "label": "Empty.081",
-            "auto_placed": true
+            "label": "CH81"
         },
         {
             "channel": 82,
             "position": [
-                -0.234225,
-                0.003357,
-                1.045378
+                -0.201061,
+                0.00767,
+                1.018038
             ],
-            "label": "Empty.082",
-            "auto_placed": true
+            "label": "CH82"
         },
         {
             "channel": 83,
             "position": [
-                -0.237248,
-                0.000217,
-                1.026178
+                -0.206197,
+                0.004703,
+                0.999214
             ],
-            "label": "Empty.083",
-            "auto_placed": true
+            "label": "CH83"
         },
         {
             "channel": 84,
             "position": [
-                -0.239709,
-                -0.003206,
-                1.005591
+                -0.212454,
+                0.002236,
+                0.980417
             ],
-            "label": "Empty.084",
-            "auto_placed": true
+            "label": "CH84"
         },
         {
             "channel": 85,
             "position": [
-                -0.242482,
-                -0.007423,
-                0.981209
+                -0.217564,
+                -0.000847,
+                0.961615
             ],
-            "label": "Empty.085",
-            "auto_placed": true
+            "label": "CH85"
         },
         {
             "channel": 86,
             "position": [
-                -0.244826,
-                -0.010794,
-                0.960448
+                -0.222397,
+                -0.004263,
+                0.942852
             ],
-            "label": "Empty.086",
-            "auto_placed": true
+            "label": "CH86"
         },
         {
             "channel": 87,
             "position": [
-                -0.247408,
-                -0.014226,
-                0.939168
+                -0.229463,
+                -0.006984,
+                0.924211
             ],
-            "label": "Empty.087",
-            "auto_placed": true
+            "label": "CH87"
         },
         {
             "channel": 88,
             "position": [
-                -0.251124,
-                -0.017919,
-                0.916221
+                -0.23465,
+                -0.010233,
+                0.905455
             ],
-            "label": "Empty.088",
-            "auto_placed": true
+            "label": "CH88"
         },
         {
             "channel": 89,
             "position": [
-                -0.254816,
-                -0.021514,
-                0.893249
+                -0.237487,
+                -0.014144,
+                0.886555
             ],
-            "label": "Empty.089",
-            "auto_placed": true
+            "label": "CH89"
         },
         {
             "channel": 90,
             "position": [
-                -0.230184,
-                0.00773,
-                1.126468
+                -0.184362,
+                0.041187,
+                1.099103
             ],
-            "label": "Empty.090",
-            "auto_placed": true
+            "label": "CH90"
         },
         {
             "channel": 91,
             "position": [
-                -0.233002,
-                0.007911,
-                1.112218
+                -0.186385,
+                0.03728,
+                1.080101
             ],
-            "label": "Empty.091",
-            "auto_placed": true
+            "label": "CH91"
         },
         {
             "channel": 92,
             "position": [
-                -0.235,
-                0.00673,
-                1.093847
+                -0.189656,
+                0.033571,
+                1.06121
             ],
-            "label": "Empty.092",
-            "auto_placed": true
+            "label": "CH92"
         },
         {
             "channel": 93,
             "position": [
-                -0.237027,
-                0.005439,
-                1.075884
+                -0.190668,
+                0.029594,
+                1.042099
             ],
-            "label": "Empty.093",
-            "auto_placed": true
+            "label": "CH93"
         },
         {
             "channel": 94,
             "position": [
-                -0.239258,
-                0.003523,
-                1.056096
+                -0.194774,
+                0.026047,
+                1.023275
             ],
-            "label": "Empty.094",
-            "auto_placed": true
+            "label": "CH94"
         },
         {
             "channel": 95,
             "position": [
-                -0.241671,
-                0.001916,
-                1.03819
+                -0.200074,
+                0.022049,
+                1.004698
             ],
-            "label": "Empty.095",
-            "auto_placed": true
+            "label": "CH95"
         },
         {
             "channel": 96,
             "position": [
-                -0.244499,
-                -0.000196,
-                1.018588
+                -0.204994,
+                0.017814,
+                0.986126
             ],
-            "label": "Empty.096",
-            "auto_placed": true
+            "label": "CH96"
         },
         {
             "channel": 97,
             "position": [
-                -0.247067,
-                -0.002927,
-                0.997695
+                -0.210011,
+                0.013661,
+                0.967547
             ],
-            "label": "Empty.097",
-            "auto_placed": true
+            "label": "CH97"
         },
         {
             "channel": 98,
             "position": [
-                -0.250096,
-                -0.006654,
-                0.973219
+                -0.216103,
+                0.009743,
+                0.94905
             ],
-            "label": "Empty.098",
-            "auto_placed": true
+            "label": "CH98"
         },
         {
             "channel": 99,
             "position": [
-                -0.252666,
-                -0.009787,
-                0.952431
+                -0.222112,
+                0.006124,
+                0.930476
             ],
-            "label": "Empty.099",
-            "auto_placed": true
+            "label": "CH99"
         },
         {
             "channel": 100,
             "position": [
-                -0.255575,
-                -0.013159,
-                0.931009
+                -0.227977,
+                0.002546,
+                0.911876
             ],
-            "label": "Empty.100",
-            "auto_placed": true
+            "label": "CH100"
         },
         {
             "channel": 101,
             "position": [
-                -0.25901,
-                -0.01689,
-                0.90805
+                -0.232482,
+                -0.001537,
+                0.893219
             ],
-            "label": "Empty.101",
-            "auto_placed": true
+            "label": "CH101"
         },
         {
             "channel": 102,
             "position": [
-                -0.262461,
-                -0.020766,
-                0.885125
+                -0.237043,
+                -0.006024,
+                0.874658
             ],
-            "label": "Empty.102",
-            "auto_placed": true
+            "label": "CH102"
         },
         {
             "channel": 103,
             "position": [
-                -0.184375,
-                0.034821,
-                1.117931
+                -0.207254,
+                0.064861,
+                1.106772
             ],
-            "label": "Empty.103",
-            "auto_placed": true
+            "label": "CH103"
         },
         {
             "channel": 104,
             "position": [
-                -0.184965,
-                0.03248,
-                1.106731
+                -0.209256,
+                0.06115,
+                1.087725
             ],
-            "label": "Empty.104",
-            "auto_placed": true
+            "label": "CH104"
         },
         {
             "channel": 105,
             "position": [
-                -0.186719,
-                0.028734,
-                1.091911
+                -0.21181,
+                0.056257,
+                1.069005
             ],
-            "label": "Empty.105",
-            "auto_placed": true
+            "label": "CH105"
         },
         {
             "channel": 106,
             "position": [
-                -0.189542,
-                0.023736,
-                1.074779
+                -0.214633,
+                0.051309,
+                1.050332
             ],
-            "label": "Empty.106",
-            "auto_placed": true
+            "label": "CH106"
         },
         {
             "channel": 107,
             "position": [
-                -0.193026,
-                0.018867,
-                1.055542
+                -0.218486,
+                0.044963,
+                1.032092
             ],
-            "label": "Empty.107",
-            "auto_placed": true
+            "label": "CH107"
         },
         {
             "channel": 108,
             "position": [
-                -0.196789,
-                0.014607,
-                1.038287
+                -0.221482,
+                0.039801,
+                1.013487
             ],
-            "label": "Empty.108",
-            "auto_placed": true
+            "label": "CH108"
         },
         {
             "channel": 109,
             "position": [
-                -0.201298,
-                0.010094,
-                1.019572
+                -0.222922,
+                0.036557,
+                0.994267
             ],
-            "label": "Empty.109",
-            "auto_placed": true
+            "label": "CH109"
         },
         {
             "channel": 110,
             "position": [
-                -0.206079,
-                0.006515,
-                0.999306
+                -0.225576,
+                0.031968,
+                0.975494
             ],
-            "label": "Empty.110",
-            "auto_placed": true
+            "label": "CH110"
         },
         {
             "channel": 111,
             "position": [
-                -0.211739,
-                0.002501,
-                0.975235
+                -0.228212,
+                0.027272,
+                0.956741
             ],
-            "label": "Empty.111",
-            "auto_placed": true
+            "label": "CH111"
         },
         {
             "channel": 112,
             "position": [
-                -0.217463,
-                -0.000566,
-                0.954823
+                -0.230976,
+                0.022175,
+                0.938093
             ],
-            "label": "Empty.112",
-            "auto_placed": true
+            "label": "CH112"
         },
         {
             "channel": 113,
             "position": [
-                -0.22383,
-                -0.003788,
-                0.933964
+                -0.233588,
+                0.016637,
+                0.919523
             ],
-            "label": "Empty.113",
-            "auto_placed": true
+            "label": "CH113"
         },
         {
             "channel": 114,
             "position": [
-                -0.23127,
-                -0.008099,
-                0.911612
+                -0.237596,
+                0.010133,
+                0.901337
             ],
-            "label": "Empty.114",
-            "auto_placed": true
+            "label": "CH114"
         },
         {
             "channel": 115,
             "position": [
-                -0.238995,
-                -0.011868,
-                0.889175
+                -0.240949,
+                0.005005,
+                0.882768
             ],
-            "label": "Empty.115",
-            "auto_placed": true
+            "label": "CH115"
         },
         {
             "channel": 116,
             "position": [
-                -0.192217,
-                0.028405,
-                1.117237
+                -0.217878,
+                0.066278,
+                1.097715
             ],
-            "label": "Empty.116",
-            "auto_placed": true
+            "label": "CH116"
         },
         {
             "channel": 117,
             "position": [
-                -0.193173,
-                0.023138,
-                1.103957
+                -0.219848,
+                0.063767,
+                1.0784
             ],
-            "label": "Empty.117",
-            "auto_placed": true
+            "label": "CH117"
         },
         {
             "channel": 118,
             "position": [
-                -0.19463,
-                0.018323,
-                1.086318
+                -0.222354,
+                0.060055,
+                1.059415
             ],
-            "label": "Empty.118",
-            "auto_placed": true
+            "label": "CH118"
         },
         {
             "channel": 119,
             "position": [
-                -0.196662,
-                0.013806,
-                1.069066
+                -0.225718,
+                0.052984,
+                1.041275
             ],
-            "label": "Empty.119",
-            "auto_placed": true
+            "label": "CH119"
         },
         {
             "channel": 120,
             "position": [
-                -0.199473,
-                0.009219,
-                1.049937
+                -0.228544,
+                0.048488,
+                1.022502
             ],
-            "label": "Empty.120",
-            "auto_placed": true
+            "label": "CH120"
         },
         {
             "channel": 121,
             "position": [
-                -0.202943,
-                0.004875,
-                1.032763
+                -0.23088,
+                0.044788,
+                1.003493
             ],
-            "label": "Empty.121",
-            "auto_placed": true
+            "label": "CH121"
         },
         {
             "channel": 122,
             "position": [
-                -0.207397,
-                0.000243,
-                1.013917
+                -0.23323,
+                0.040479,
+                0.98462
             ],
-            "label": "Empty.122",
-            "auto_placed": true
+            "label": "CH122"
         },
         {
             "channel": 123,
             "position": [
-                -0.212161,
-                -0.003734,
-                0.993569
+                -0.235868,
+                0.035382,
+                0.965956
             ],
-            "label": "Empty.123",
-            "auto_placed": true
+            "label": "CH123"
         },
         {
             "channel": 124,
             "position": [
-                -0.217847,
-                -0.00804,
-                0.969548
+                -0.238957,
+                0.02943,
+                0.947536
             ],
-            "label": "Empty.124",
-            "auto_placed": true
+            "label": "CH124"
         },
         {
             "channel": 125,
             "position": [
-                -0.223482,
-                -0.01099,
-                0.949098
+                -0.242466,
+                0.022854,
+                0.929305
             ],
-            "label": "Empty.125",
-            "auto_placed": true
+            "label": "CH125"
         },
         {
             "channel": 126,
             "position": [
-                -0.229803,
-                -0.013756,
-                0.927963
+                -0.245971,
+                0.016441,
+                0.911037
             ],
-            "label": "Empty.126",
-            "auto_placed": true
+            "label": "CH126"
         },
         {
             "channel": 127,
             "position": [
-                -0.236872,
-                -0.016432,
-                0.90522
+                -0.24903,
+                0.009694,
+                0.892788
             ],
-            "label": "Empty.127",
-            "auto_placed": true
+            "label": "CH127"
         },
         {
             "channel": 128,
             "position": [
-                -0.243857,
-                -0.018375,
-                0.882305
+                -0.251574,
+                0.004039,
+                0.874236
             ],
-            "label": "Empty.128",
-            "auto_placed": true
+            "label": "CH128"
         }
     ]
 }
