@@ -137,6 +137,10 @@ def exponential_smooth(
     Returns:
         Smoothed signal with same shape as input
     """
+    signal = np.asarray(signal)
+    if signal.size == 0:
+        return signal.copy()
+
     if signal.ndim == 1:
         smoothed = np.zeros_like(signal)
         smoothed[0] = signal[0]
@@ -183,6 +187,10 @@ def adaptive_smooth(
     """
     if fs is None:
         raise ValueError("Sampling frequency (fs) required for adaptive smoothing")
+
+    signal = np.asarray(signal)
+    if signal.size == 0:
+        return signal.copy()
     
     # Compute velocity
     velocity = np.diff(signal, axis=axis) * fs

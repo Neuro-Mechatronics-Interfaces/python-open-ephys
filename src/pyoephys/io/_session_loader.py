@@ -103,15 +103,16 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     if n_channels == 0:
         raise RuntimeError("Cannot determine number of channels from .oebin")
 
-    # Locate binary files
+    # Locate binary files for the selected continuous stream.
     root = oebin.parent
-    dat = _find_first(root, "continuous.dat")
-    ts = _find_first(root, "timestamps.npy")
+    stream_root = _resolve_stream_root(root, stream)
+    dat = stream_root / "continuous.dat"
+    ts = stream_root / "timestamps.npy"
 
-    if dat is None:
+    if not dat.exists():
         raise FileNotFoundError("continuous.dat not found under session directory.")
     # timestamps are optional; we can synthesize if missing
-    have_ts = ts is not None
+    have_ts = ts.exists()
 
     # Read int16 interleaved -> (S, C) -> transpose to (C, S)
     raw = np.fromfile(dat, dtype="<i2")
@@ -125,7 +126,7 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     y = y.T  # (C, S)
 
     if have_ts:
-        t = np.load(ts).astype(np.float64)
+        t = _normalize_timestamps(np.load(ts).astype(np.float64), fs)
         if t.ndim != 1 or t.size != samples:
             raise ValueError("timestamps.npy has wrong shape.")
     else:
@@ -184,6 +185,69 @@ def _find_first(root: Path, filename: str) -> Optional[Path]:
     for p in root.rglob(filename):
         return p
     return None
+
+
+def _resolve_stream_root(root: Path, stream: dict) -> Path:
+    candidates = sorted({path.parent for path in root.rglob("continuous.dat")})
+    if not candidates:
+        return root
+    if len(candidates) == 1:
+        return candidates[0]
+
+    for hint in _stream_path_hints(stream):
+        direct = (root / hint).resolve()
+        if (direct / "continuous.dat").exists():
+            return direct
+
+        hint_norm = hint.replace("\\", "/").strip("/").lower()
+        hint_name = Path(hint_norm).name
+        for candidate in candidates:
+            rel = candidate.relative_to(root).as_posix().lower()
+            if rel == hint_norm or rel.endswith(f"/{hint_norm}") or candidate.name.lower() == hint_name:
+                return candidate
+
+    return root
+
+
+def _stream_path_hints(stream: dict) -> List[str]:
+    hints: List[str] = []
+    for key in (
+        "folder_name",
+        "folderName",
+        "folder",
+        "path",
+        "recording_path",
+        "recordingPath",
+        "source_processor_name",
+        "sourceProcessorName",
+        "stream_name",
+        "streamName",
+        "name",
+    ):
+        value = stream.get(key)
+        if isinstance(value, str) and value.strip():
+            hints.append(value.strip())
+    return hints
+
+
+def _normalize_timestamps(timestamps: np.ndarray, fs: float) -> np.ndarray:
+    t = np.asarray(timestamps, dtype=np.float64).reshape(-1)
+    if t.size < 2 or fs <= 0:
+        return t
+
+    diffs = np.diff(t)
+    diffs = diffs[np.isfinite(diffs) & (diffs > 0)]
+    if diffs.size == 0:
+        return t
+
+    median_diff = float(np.median(diffs))
+    if np.isclose(median_diff * fs, 1.0, rtol=0.05, atol=1e-9):
+        return t
+
+    if np.allclose(diffs, np.round(diffs), rtol=0.0, atol=1e-6):
+        return t / fs
+
+    return t
 
 
 def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0.195) -> np.ndarray:

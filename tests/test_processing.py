@@ -1,7 +1,11 @@
 import pytest
 import numpy as np
 from pyoephys.processing import (
+    EMGPreprocessor,
+    adaptive_smooth,
     bandpass_filter, 
+    exponential_smooth,
+    find_sync_offset,
     notch_filter, 
     lowpass_filter, 
     compute_rms, 
@@ -65,3 +69,39 @@ def test_common_average_reference():
     assert car_data.shape == data.shape
     # Means should be close to zero after CAR
     assert np.all(np.abs(np.mean(car_data, axis=0)) < 1e-10)
+
+
+def test_exponential_smooth_empty_input():
+    signal = np.array([], dtype=np.float32)
+
+    smoothed = exponential_smooth(signal)
+
+    assert smoothed.shape == signal.shape
+    assert smoothed.size == 0
+
+
+def test_adaptive_smooth_empty_input():
+    signal = np.empty((0, 3), dtype=np.float32)
+
+    smoothed = adaptive_smooth(signal, fs=100.0)
+
+    assert smoothed.shape == signal.shape
+    assert smoothed.size == 0
+
+
+def test_find_sync_offset_requires_multiple_timestamps():
+    with pytest.raises(ValueError, match="at least two"):
+        find_sync_offset(
+            np.array([1.0]),
+            np.array([0.0]),
+            np.array([1.0, 2.0]),
+            np.array([0.0, 1.0]),
+        )
+
+
+def test_extract_emg_features_rejects_subsample_windows():
+    preprocessor = EMGPreprocessor(fs=10.0)
+    emg = np.ones((2, 20), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="at least one sample"):
+        preprocessor.extract_emg_features(emg, window_ms=50, step_ms=50)

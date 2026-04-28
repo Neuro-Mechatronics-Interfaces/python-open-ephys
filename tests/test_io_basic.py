@@ -1,6 +1,10 @@
-import pytest
-import shutil
+import json
 from pathlib import Path
+
+import numpy as np
+import pytest
+
+from pyoephys.io import load_open_ephys_session
 from pyoephys.io._file_utils import find_oebin_files, discover_and_group_files
 
 @pytest.fixture
@@ -39,3 +43,71 @@ def test_discover_files(mock_fs):
     groups = discover_and_group_files(str(mock_fs), file_type="rhd")
     assert "data1" in groups
     assert "data2" in groups # timestamp stripped
+
+
+def _write_oebin_session(root: Path, meta: dict) -> Path:
+    oebin = root / "structure.oebin"
+    oebin.write_text(json.dumps(meta), encoding="utf-8")
+    return oebin
+
+
+def _write_continuous_block(folder: Path, samples: np.ndarray, timestamps: np.ndarray) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    np.asarray(samples, dtype="<i2").tofile(folder / "continuous.dat")
+    np.save(folder / "timestamps.npy", np.asarray(timestamps, dtype=np.float64))
+
+
+def test_load_session_converts_sample_counter_timestamps(tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    meta = {
+        "continuous": [
+            {
+                "sample_rate": 2000.0,
+                "num_channels": 2,
+                "channels": [
+                    {"channel_name": "CH1", "bit_volts": 0.195, "units": "uV"},
+                    {"channel_name": "CH2", "bit_volts": 0.195, "units": "uV"},
+                ],
+            }
+        ]
+    }
+    oebin = _write_oebin_session(session_dir, meta)
+    samples = np.array([[1, 2], [3, 4], [5, 6]], dtype=np.int16)
+    _write_continuous_block(session_dir, samples, np.array([100, 101, 102]))
+
+    session = load_open_ephys_session(oebin)
+
+    np.testing.assert_allclose(session["t_amplifier"], np.array([0.05, 0.0505, 0.051]))
+    assert session["amplifier_data"].shape == (2, 3)
+    assert session["channel_names"] == ["CH1", "CH2"]
+
+
+def test_load_session_prefers_stream_local_files(tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    meta = {
+        "continuous": [
+            {
+                "sample_rate": 1000.0,
+                "num_channels": 1,
+                "folder_name": "stream_b",
+                "channels": [
+                    {"channel_name": "CH1", "bit_volts": 1.0, "units": "uV"},
+                ],
+            }
+        ]
+    }
+    oebin = _write_oebin_session(session_dir, meta)
+
+    _write_continuous_block(session_dir, np.array([[11], [22]], dtype=np.int16), np.array([0.0, 0.001]))
+    _write_continuous_block(
+        session_dir / "stream_b",
+        np.array([[101], [202]], dtype=np.int16),
+        np.array([10, 11]),
+    )
+
+    session = load_open_ephys_session(oebin)
+
+    np.testing.assert_allclose(session["amplifier_data"], np.array([[101.0, 202.0]], dtype=np.float32))
+    np.testing.assert_allclose(session["t_amplifier"], np.array([0.01, 0.011]))

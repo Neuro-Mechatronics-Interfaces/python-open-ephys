@@ -161,6 +161,9 @@ class EMGPreprocessor:
         w = int(window_ms * fs / 1000)
         s = int(step_ms * fs / 1000)
         n_samps = emg.shape[1]
+
+        if w < 1 or s < 1:
+            raise ValueError("window_ms and step_ms must each span at least one sample")
         
         feature_fns = feature_fns or self.feature_fns
 

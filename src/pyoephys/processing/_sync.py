@@ -181,6 +181,18 @@ def find_sync_offset(
         >>> sync = find_sync_offset(emg_env, emg_t, lm_vel, lm_t)
         >>> print(f"Offset: {sync['offset_sec']:.3f}s, Confidence: {sync['confidence']:.2f}")
     """
+    emg_signal = np.asarray(emg_signal)
+    emg_times = np.asarray(emg_times)
+    landmark_signal = np.asarray(landmark_signal)
+    landmark_times = np.asarray(landmark_times)
+
+    if emg_signal.shape[0] != emg_times.shape[0]:
+        raise ValueError("EMG signal and timestamps must have the same length")
+    if landmark_signal.shape[0] != landmark_times.shape[0]:
+        raise ValueError("Landmark signal and timestamps must have the same length")
+    if emg_times.size < 2 or landmark_times.size < 2:
+        raise ValueError("EMG and landmark timelines must each contain at least two timestamps")
+
     # Determine common sampling rate (use EMG rate)
     common_fs = 1.0 / (emg_times[1] - emg_times[0])
     
