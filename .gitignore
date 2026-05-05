@@ -93,6 +93,7 @@ src/old_utils/
 # Versioned build directories and artifacts
 python_oephys-*
 python_open_ephys-*
+src/pyoephys/_version.py
 *.npz
 *.npy
 *.log
