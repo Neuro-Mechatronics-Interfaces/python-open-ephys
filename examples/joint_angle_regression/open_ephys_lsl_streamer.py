@@ -261,6 +261,7 @@ class OpenEphysLSLStreamer:
             data_port=str(self.port),
             buffer_seconds=30.0,
             auto_start=False,
+            set_index_looping=False,
             verbose=False,
         )
         if self.emg_channels > 0:
@@ -433,6 +434,11 @@ class OpenEphysLSLStreamer:
         # Use global_sample_index (header-based per-channel index) as cursor.
         with self.client._lock:
             cur_idx = int(self.client.global_sample_index)
+            if cur_idx < self._prev_idx:
+                self._prev_idx = cur_idx
+                info["error"] = "Source sample index reset; resynchronized to continuing playback."
+                self.last_error = info["error"]
+                return info
             n_new = cur_idx - self._prev_idx
             if n_new <= 0:
                 return info

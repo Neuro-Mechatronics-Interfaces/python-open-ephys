@@ -24,6 +24,8 @@ dependencies = [
 	"pyyaml",
     "PyQt5",
     "pyqtgraph",
+    "PyOpenGL>=3.1.7",
+    "PyOpenGL-accelerate>=3.1.7",
     #"pyyaml",
     "pyzmq",
     "pyserial",
@@ -63,7 +65,7 @@ docs = [
     "sphinx-autodoc-typehints",
     "myst-parser",
 ]
-gui = ["PyQt5", "pyqtgraph"]
+gui = ["PyQt5", "pyqtgraph", "PyOpenGL>=3.1.7", "PyOpenGL-accelerate>=3.1.7"]
 ml = ["torch", "scikit-learn", "joblib"]
 
 [project.scripts]
