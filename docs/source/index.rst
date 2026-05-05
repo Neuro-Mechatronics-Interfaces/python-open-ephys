@@ -1,11 +1,25 @@
-Welcome to python-oephys's documentation!
-=========================================
+python-open-ephys documentation
+===============================
 
-**python-oephys** is a comprehensive Python toolkit for working with Open Ephys devices, featuring signal processing, machine learning, and real-time visualization tools.
+python-open-ephys provides a single Python surface for Open Ephys file loading, real-time interfaces, signal processing, visualization, and downstream analysis.
+
+Project links
+-------------
+
+- Documentation site: https://neuro-mechatronics-interfaces.github.io/python-open-ephys/
+- Source repository: https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys
+- PyPI package: https://pypi.org/project/python-oephys/
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Getting Started
+
+   overview
+   development
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
 
    modules
 

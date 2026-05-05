@@ -1,6 +1,6 @@
 [project]
 name = "python-oephys"
-version = "0.1.0"
+dynamic = ["version"]
 
 description = "Python interface and utilities for working with Open Ephys devices and electrophysiology data"
 authors = [
@@ -10,6 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 keywords = ["open-ephys", "emg", "neurotech", "signal processing", "biomedical"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
     "numpy>=1.26.0",
     "scipy==1.14.1",
@@ -38,14 +49,14 @@ Documentation = "https://neuro-mechatronics-interfaces.github.io/python-open-eph
 Repository = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys.git"
 Issues = "https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys/issues"
 
-# dynamic = ["version"]
-
 [build-system]
 requires = ["setuptools>=61.0", "setuptools_scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 write_to = "src/pyoephys/_version.py"
+tag_regex = "^v?(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-]?(?:a|b|rc)\\d+)?)$"
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*"
 local_scheme = "no-local-version"
 
 [tool.setuptools]
@@ -64,6 +75,8 @@ docs = [
     "sphinx",
     "sphinx-autodoc-typehints",
     "myst-parser",
+    "sphinx-copybutton",
+    "sphinx-rtd-theme",
 ]
 gui = ["PyQt5", "pyqtgraph", "PyOpenGL>=3.1.7", "PyOpenGL-accelerate>=3.1.7"]
 ml = ["torch", "scikit-learn", "joblib"]

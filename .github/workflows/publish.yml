@@ -12,13 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/python-oephys
+      url: https://pypi.org/project/python-oephys/
     permissions:
       id-token: write
       contents: read
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     
     - name: Set up Python
       uses: actions/setup-python@v4

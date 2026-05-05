@@ -1,37 +1,40 @@
 ![Logo](https://raw.githubusercontent.com/Neuro-Mechatronics-Interfaces/python-open-ephys/main/docs/figs/logo.jpg)
 
-# Python OEphys
+# python-open-ephys
 
 [![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://neuro-mechatronics-interfaces.github.io/python-open-ephys/)
-[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
+[![Tests](https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys/actions/workflows/test.yml/badge.svg)](https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/python-oephys.svg)](https://pypi.org/project/python-oephys/)
+[![Python](https://img.shields.io/pypi/pyversions/python-oephys.svg)](https://pypi.org/project/python-oephys/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![PyPI version](https://badge.fury.io/py/python-oephys.svg)](https://badge.fury.io/py/python-oephys)
-[![Downloads](https://pepy.tech/badge/python-oephys)](https://pepy.tech/project/python-oephys)
 
-**python-oephys** is a comprehensive Python toolkit for working with Open Ephys devices and electrophysiology data. From file loading to real-time ZMQ streaming, signal processing to machine learning, and visualization tools—everything you need for high-density neural data analysis in one package.
+python-open-ephys is a Python toolkit for loading, streaming, processing, and visualizing Open Ephys electrophysiology data. The project combines file I/O, real-time interfaces, signal-processing utilities, and higher-level application examples in one package.
 
----
+## Highlights
 
-## ✨ Key Features
+- Load Open Ephys Binary recordings and normalized NPZ exports.
+- Stream live data from the Open Ephys GUI over ZMQ and LSL.
+- Process EMG and electrophysiology signals with filtering, synchronization, and QC utilities.
+- Run GUI tools for viewing recordings and inspecting real-time streams.
+- Prototype machine-learning workflows on top of the same session format.
 
-- 📁 **File I/O**: Robust support for Open Ephys Binary (`.oebin`) and `.npz` formats
-- 🔴 **Real-time Streaming**: Seamless integration with the Open Ephys GUI via ZMQ
-- 🎛️ **Signal Processing**: Filtering (Bandpass, Notch), Channel QC, and synchronization
-- 🤖 **Machine Learning**: Hybrid CNN-LSTM models for real-time gesture recognition
-- 📊 **Visualization**: Real-time EMG viewer, offline analysis, and trial segmentation tools
-- 🚀 **Performance**: Optimized for low-latency real-time applications
+## Installation
 
----
-
-## 📦 Installation
-
-### From TestPyPI (Current Development Release)
+Install the latest published release from PyPI:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
+pip install python-oephys
 ```
 
-### From Source
+Install optional feature sets as needed:
+
+```bash
+pip install "python-oephys[gui]"
+pip install "python-oephys[ml]"
+pip install "python-oephys[docs]"
+```
+
+Install from source for development:
 
 ```bash
 git clone https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys.git
@@ -39,70 +42,80 @@ cd python-open-ephys
 pip install -e .
 ```
 
-### Optional Extras
+Install a pre-release build from TestPyPI when you want to validate an upcoming release candidate:
 
-- **GUI**: `pip install 'python-oephys[gui]'` (PyQt5, pyqtgraph)
-- **ML**: `pip install 'python-oephys[ml]'` (PyTorch, scikit-learn)
-- **Docs**: `pip install 'python-oephys[docs]'` (Sphinx)
+```bash
+pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
+```
 
----
-
-## 🚀 Getting Started
-
-### Load and Filter Data
+## Quick Start
 
 ```python
 from pyoephys.io import load_open_ephys_session
 from pyoephys.processing import filter_emg
 
-# Load session
-sess = load_open_ephys_session('path/to/recording.oebin')
-data = sess['amplifier_data']
-fs = sess['sample_rate']
+session = load_open_ephys_session("path/to/recording.oebin")
+amplifier_data = session["amplifier_data"]
+sample_rate = session["sample_rate"]
 
-# Apply filters
-filtered = filter_emg(data, filter_type='bandpass', lowcut=10, highcut=500, fs=fs)
+filtered = filter_emg(
+    amplifier_data,
+    filter_type="bandpass",
+    lowcut=10,
+    highcut=500,
+    fs=sample_rate,
+)
 ```
 
-### Real-time ZMQ Streaming
+Launch the real-time viewer against an Open Ephys ZMQ stream:
 
 ```bash
-# Launch the live viewer (ensure ZMQ Interface plugin is active in GUI)
 python -m pyoephys.applications._realtime_viewer --host 127.0.0.1 --channels 0:8
 ```
 
----
+## Examples
 
-## 🗂️ Package Structure
+The repository includes runnable examples for common workflows:
 
-```text
-pyoephys/
-├── applications/     # GUI applications (Real-time & Offline viewers)
-├── interface/        # ZMQ, LSL, and playback clients
-├── io/               # Unified file loaders (.oebin, .npz)
-├── ml/               # Gesture classification (CNN-LSTM)
-├── plotting/         # Visualization utilities
-└── processing/       # Signal filters, QC, and synchronization
+- `examples/read_files/` for loading `.oebin` recordings and exporting session data.
+- `examples/interface/` for ZMQ, LSL, IMU, and hardware integration workflows.
+- `examples/applications/` for standalone viewers and analysis tools.
+- `examples/analysis/`, `examples/benchmarks/`, and `examples/visualization/` for downstream analysis and diagnostics.
 
-examples/
-├── benchmarks/       # Throughput and latency tests
-├── interface/        # LSL, ZMQ, and hardware control
-│   ├── hardware/     # Serial/UDP Pico integration
-│   ├── imu/          # Sleeve IMU client & monitor
-│   ├── lsl/          # LSL streaming & capture
-│   └── zmq/          # ZMQ clients & plotters
-├── applications/     # Standalone GUIs (EMG viewer, joint-angle regression)
-└── machine_learning/ # Model training and evaluation
+## Documentation
+
+Hosted documentation: https://neuro-mechatronics-interfaces.github.io/python-open-ephys/
+
+Build the docs locally with:
+
+```bash
+python -m sphinx -b html docs/source docs/build/html
 ```
 
----
+## Development
 
-## 📄 License
+Run the test suite:
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```bash
+pytest tests/
+```
 
----
+Build source and wheel distributions:
 
-<p align="center">
-  Made with ❤️ by the Neuromechatronics Lab
-</p>
+```bash
+python -m build
+```
+
+## Release Workflow
+
+- Pushes to `main` publish the Sphinx site to GitHub Pages.
+- The `Test Publish to TestPyPI` workflow is available for manual pre-release validation.
+- Publishing a GitHub Release triggers the PyPI publish workflow.
+
+## Contributing
+
+Issues and pull requests are welcome. If you are proposing a new feature, include the target workflow, example data format, and any GUI or hardware assumptions so the change can be tested cleanly.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
