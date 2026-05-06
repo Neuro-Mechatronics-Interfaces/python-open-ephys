@@ -46,7 +46,7 @@ All scripts default to `data/gestures/` — no arguments required if your record
 2_train_model.py
         │
         ▼
-  data/model/                   ← trained model + scaler + metadata.json
+  data/gesture_model/model/     ← trained model + scaler + metadata.json
 
         │
         ├──────────────────────────────────────────────────┐
@@ -103,7 +103,7 @@ All parameters can be set via CLI arguments or in a `.gesture_config` file
 |-----------|---------|-------------|
 | `data_path` | `data/gestures/` | Path to EMG recording |
 | `labels_path` | auto-detected | Path to labels/events CSV |
-| `model_dir` | `./data/gesture_model` | Model save/load directory |
+| `model_dir` | `./data/gesture_model/model` | Model save/load directory |
 | `dataset_path` | `data/gestures/training_dataset.npz` | Feature dataset output |
 | `window_ms` | `200` | Analysis window length (ms) |
 | `step_ms` | `50` | Step between windows (ms) |
@@ -227,7 +227,8 @@ gesture_classifier/
 │   ├── gestures/                    # Open Ephys binary recording
 │   │   ├── emg.txt                  # gesture event labels
 │   │   └── training_dataset.npz    # built by 1_build_dataset.py
-│   └── model/                      # built by 2_train_model.py
+│   └── gesture_model/
+│       └── model/                  # built by 2_train_model.py
 ├── 1_build_dataset.py
 ├── 2_train_model.py
 ├── predict.py

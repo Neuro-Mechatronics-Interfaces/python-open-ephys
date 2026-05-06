@@ -26,11 +26,9 @@ Install the latest published release from PyPI:
 pip install python-oephys
 ```
 
-Install optional feature sets as needed:
+The published package currently includes the runtime GUI and ML dependencies in the base install. Install the docs toolchain separately if you need to build the documentation locally:
 
 ```bash
-pip install "python-oephys[gui]"
-pip install "python-oephys[ml]"
 pip install "python-oephys[docs]"
 ```
 
@@ -52,17 +50,16 @@ pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
 
 ```python
 from pyoephys.io import load_open_ephys_session
-from pyoephys.processing import filter_emg
+from pyoephys.processing import bandpass_filter
 
 session = load_open_ephys_session("path/to/recording.oebin")
 amplifier_data = session["amplifier_data"]
 sample_rate = session["sample_rate"]
 
-filtered = filter_emg(
+filtered = bandpass_filter(
     amplifier_data,
-    filter_type="bandpass",
     lowcut=10,
-    highcut=500,
+    highcut=450,
     fs=sample_rate,
 )
 ```

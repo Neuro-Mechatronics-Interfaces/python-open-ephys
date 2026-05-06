@@ -32,7 +32,7 @@ This example demonstrates how to:
 ### Software
 ```bash
 # Install python-open-ephys
-pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
+pip install python-oephys
 
 # Install required packages
 pip install numpy PyQt5 pylsl
@@ -253,7 +253,7 @@ Both EMG and angles use **LSL timestamps** (`pylsl.local_clock()`), enabling pre
 
 ### "python-oephys missing"
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
+pip install python-oephys
 pip install numpy zmq
 ```
 
