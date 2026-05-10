@@ -14,7 +14,7 @@ from ._file_utils import find_oebin_files
 @dataclass
 class SessionData:
     amplifier_data: np.ndarray  # shape (C, S), float32 (microvolts by default)
-    t_amplifier: np.ndarray     # shape (S,), float64 seconds
+    t_amplifier: np.ndarray  # shape (S,), float64 seconds
     sample_rate: float
     channel_names: List[str]
 
@@ -46,7 +46,9 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
         try:
             import pandas as pd
         except ImportError:
-            raise ImportError("pandas is required to load CSV files: pip install pandas")
+            raise ImportError(
+                "pandas is required to load CSV files: pip install pandas"
+            )
         df = pd.read_csv(p)
         if "timestamp" in df.columns:
             t = df["timestamp"].to_numpy(dtype=np.float64)
@@ -94,10 +96,23 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     if stream is None:
         raise RuntimeError("No continuous stream found in .oebin metadata.")
 
-    fs = float(stream.get("sample_rate") or stream.get("sampleRate") or stream.get("rate") or meta.get("sample_rate", 0.0))
+    fs = float(
+        stream.get("sample_rate")
+        or stream.get("sampleRate")
+        or stream.get("rate")
+        or meta.get("sample_rate", 0.0)
+    )
     channels_meta = stream.get("channels") or stream.get("source_channels") or []
-    channel_names = [c.get("channel_name") or c.get("name") or f"ch{i}" for i, c in enumerate(channels_meta)]
-    n_channels = int(stream.get("num_channels") or stream.get("channel_count") or len(channel_names) or 0)
+    channel_names = [
+        c.get("channel_name") or c.get("name") or f"ch{i}"
+        for i, c in enumerate(channels_meta)
+    ]
+    n_channels = int(
+        stream.get("num_channels")
+        or stream.get("channel_count")
+        or len(channel_names)
+        or 0
+    )
     if n_channels == 0:
         n_channels = len(channel_names)
     if n_channels == 0:
@@ -117,7 +132,9 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
     # Read int16 interleaved -> (S, C) -> transpose to (C, S)
     raw = np.fromfile(dat, dtype="<i2")
     if raw.size % n_channels != 0:
-        raise ValueError(f"continuous.dat size {raw.size} not divisible by n_channels={n_channels}")
+        raise ValueError(
+            f"continuous.dat size {raw.size} not divisible by n_channels={n_channels}"
+        )
     samples = raw.size // n_channels
     y_i16 = raw.reshape(samples, n_channels)
     # Scale to microvolts using bitVolts if available, else 0.195 µV/count
@@ -156,6 +173,7 @@ def _pick_continuous_stream(meta: dict) -> Optional[dict]:
       - meta["recordings"][0]["streams"]["continuous"][0]
       - meta["streams"]["continuous"][0]
     """
+
     def _listify(x):
         if isinstance(x, list):
             return x
@@ -203,7 +221,11 @@ def _resolve_stream_root(root: Path, stream: dict) -> Path:
         hint_name = Path(hint_norm).name
         for candidate in candidates:
             rel = candidate.relative_to(root).as_posix().lower()
-            if rel == hint_norm or rel.endswith(f"/{hint_norm}") or candidate.name.lower() == hint_name:
+            if (
+                rel == hint_norm
+                or rel.endswith(f"/{hint_norm}")
+                or candidate.name.lower() == hint_name
+            ):
                 return candidate
 
     return root
@@ -250,7 +272,9 @@ def _normalize_timestamps(timestamps: np.ndarray, fs: float) -> np.ndarray:
     return t
 
 
-def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0.195) -> np.ndarray:
+def _extract_bitvolts(
+    channels_meta: List[dict], default_uv_per_count: float = 0.195
+) -> np.ndarray:
     uv = []
     for ch in channels_meta:
         bv = ch.get("bit_volts") or ch.get("bitVolts") or None
@@ -260,9 +284,9 @@ def _extract_bitvolts(channels_meta: List[dict], default_uv_per_count: float = 0
             # bit_volts is in µV/count when units=="uV", otherwise assume V/count
             units = (ch.get("units") or "").strip().lower()
             if units in ("uv", "µv", "microvolts"):
-                uv.append(float(bv))          # already µV/count
+                uv.append(float(bv))  # already µV/count
             else:
-                uv.append(float(bv) * 1e6)   # convert V/count → µV/count
+                uv.append(float(bv) * 1e6)  # convert V/count → µV/count
     if not uv:
         return np.full((1,), default_uv_per_count, dtype=np.float32)
     return np.asarray(uv, dtype=np.float32)

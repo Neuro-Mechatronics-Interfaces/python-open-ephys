@@ -3,9 +3,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from pyoephys.io import load_open_ephys_session
-from pyoephys.io._file_utils import find_oebin_files, discover_and_group_files
+from pyoephys.io._file_utils import discover_and_group_files, find_oebin_files
+
 
 @pytest.fixture
 def mock_fs(tmp_path):
@@ -13,18 +13,19 @@ def mock_fs(tmp_path):
     s1 = tmp_path / "session_1"
     s1.mkdir()
     (s1 / "structure.oebin").touch()
-    
+
     # Setup: root/session_2/foo/bar/structure.oebin
     s2 = tmp_path / "session_2" / "foo" / "bar"
     s2.mkdir(parents=True)
     (s2 / "structure.oebin").touch()
-    
+
     # Setup: root/ignore_me/README.txt
     s3 = tmp_path / "ignore_me"
     s3.mkdir()
     (s3 / "README.txt").touch()
-    
+
     return tmp_path
+
 
 def test_find_oebin_files(mock_fs):
     oebins = find_oebin_files(mock_fs)
@@ -32,17 +33,18 @@ def test_find_oebin_files(mock_fs):
     names = sorted([f.name for f in oebins])
     assert names == ["structure.oebin", "structure.oebin"]
     parent_names = sorted([f.parent.name for f in oebins])
-    assert "session_1" in parent_names or "bar" in parent_names 
+    assert "session_1" in parent_names or "bar" in parent_names
     # Logic depends on where oebin sits (bar, session_1)
+
 
 def test_discover_files(mock_fs):
     # Discovery usually for .rhd, let's test mocking .rhd
     (mock_fs / "data1.rhd").touch()
     (mock_fs / "data2_210101.rhd").touch()
-    
+
     groups = discover_and_group_files(str(mock_fs), file_type="rhd")
     assert "data1" in groups
-    assert "data2" in groups # timestamp stripped
+    assert "data2" in groups  # timestamp stripped
 
 
 def _write_oebin_session(root: Path, meta: dict) -> Path:
@@ -51,7 +53,9 @@ def _write_oebin_session(root: Path, meta: dict) -> Path:
     return oebin
 
 
-def _write_continuous_block(folder: Path, samples: np.ndarray, timestamps: np.ndarray) -> None:
+def _write_continuous_block(
+    folder: Path, samples: np.ndarray, timestamps: np.ndarray
+) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     np.asarray(samples, dtype="<i2").tofile(folder / "continuous.dat")
     np.save(folder / "timestamps.npy", np.asarray(timestamps, dtype=np.float64))
@@ -100,7 +104,9 @@ def test_load_session_prefers_stream_local_files(tmp_path):
     }
     oebin = _write_oebin_session(session_dir, meta)
 
-    _write_continuous_block(session_dir, np.array([[11], [22]], dtype=np.int16), np.array([0.0, 0.001]))
+    _write_continuous_block(
+        session_dir, np.array([[11], [22]], dtype=np.int16), np.array([0.0, 0.001])
+    )
     _write_continuous_block(
         session_dir / "stream_b",
         np.array([[101], [202]], dtype=np.int16),
@@ -109,5 +115,7 @@ def test_load_session_prefers_stream_local_files(tmp_path):
 
     session = load_open_ephys_session(oebin)
 
-    np.testing.assert_allclose(session["amplifier_data"], np.array([[101.0, 202.0]], dtype=np.float32))
+    np.testing.assert_allclose(
+        session["amplifier_data"], np.array([[101.0, 202.0]], dtype=np.float32)
+    )
     np.testing.assert_allclose(session["t_amplifier"], np.array([0.01, 0.011]))
