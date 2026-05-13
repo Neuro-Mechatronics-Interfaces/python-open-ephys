@@ -60,6 +60,35 @@ def _now():
     return local_clock() if local_clock is not None else time.time()
 
 
+def _format_rate_value(value: float, *, auto_for_zero: bool = False) -> str:
+    if value is None:
+        return "?"
+    value = float(value)
+    if value <= 0.0:
+        return "Auto" if auto_for_zero else "?"
+    if abs(value - round(value)) < 0.05:
+        return f"{round(value):.0f}"
+    return f"{value:.1f}"
+
+
+def _fs_summary(
+    requested_fs: float,
+    source_fs: float,
+    emitted_fs: float,
+    *,
+    header_fs: float = 0.0,
+    measured_fs: float = 0.0,
+) -> str:
+    return (
+        "LSL fs: "
+        f"requested={_format_rate_value(requested_fs, auto_for_zero=True)}  |  "
+        f"source={_format_rate_value(source_fs)}  |  "
+        f"emitted={_format_rate_value(emitted_fs)}  |  "
+        f"header={_format_rate_value(header_fs)}  |  "
+        f"measured={_format_rate_value(measured_fs)}"
+    )
+
+
 def build_outlets(
     emg_stream_name: str, imu_stream_name: str, fs: float, emg_channels: int,
     adc_stream_name: str = "OpenEphys_ADC", adc_channels: int = 0,
@@ -188,7 +217,73 @@ class OpenEphysLSLStreamer:
         self.detected_fs = 0.0  # filled after connect
         self._header_fs = 0.0  # from ZMQ header field
         self._measured_fs = 0  # empirical throughput
-        self._prev_idx = 0  # track global_sample_index (per-channel)
+        self._prev_idx = 0  # track payload sample count (or header index fallback)
+        self._cursor_source = "header"
+        self._source_fs = 0.0
+        self._pending_resample_idx = np.empty(0, dtype=np.int64)
+        self._pending_resample_rows = None
+
+    def _current_sample_cursor_locked(self) -> int:
+        """Return the monotonic sample cursor for new-data detection.
+
+        Prefer payload-derived sample counts because some ZMQ broadcasters
+        report header indices and sample_rate in the hardware clock domain
+        even when the delivered payload has already been decimated.
+        """
+        if self._cursor_source == "payload":
+            return int(getattr(self.client, "total_samples_written", 0))
+        return int(self.client.global_sample_index)
+
+    def _maybe_downsample_chunk(self, data: np.ndarray) -> np.ndarray:
+        """Reduce a raw source-rate chunk to the requested LSL output rate.
+
+        When Open Ephys broadcasts payloads at the hardware clock rate but the
+        user requests a lower LSL rate, average source samples into output-rate
+        bins based on absolute sample index. This preserves per-channel alignment
+        and supports non-integer ratios such as 30 kHz -> 4 kHz.
+        """
+        if data.size == 0:
+            return data
+
+        source_fs = float(self._source_fs)
+        target_fs = float(self.detected_fs if self.detected_fs > 0 else self.expected_fs)
+        if source_fs <= 0.0 or target_fs <= 0.0 or source_fs <= (target_fs * 1.01):
+            return data
+
+        start_idx = self._prev_idx - data.shape[0]
+        abs_idx = start_idx + np.arange(data.shape[0], dtype=np.int64)
+
+        if self._pending_resample_rows is not None and self._pending_resample_rows.size:
+            data = np.vstack((self._pending_resample_rows, data))
+            abs_idx = np.concatenate((self._pending_resample_idx, abs_idx))
+
+        bin_ids = np.floor((abs_idx.astype(np.float64) * target_fs) / source_fs).astype(np.int64)
+        if bin_ids.size == 0:
+            return data[:0]
+
+        next_bin = int(np.floor(((int(abs_idx[-1]) + 1) * target_fs) / source_fs))
+        if next_bin == int(bin_ids[-1]):
+            keep_mask = bin_ids == bin_ids[-1]
+            emit_mask = ~keep_mask
+            self._pending_resample_idx = abs_idx[keep_mask].copy()
+            self._pending_resample_rows = data[keep_mask].copy()
+        else:
+            emit_mask = np.ones(bin_ids.shape, dtype=bool)
+            self._pending_resample_idx = np.empty(0, dtype=np.int64)
+            self._pending_resample_rows = None
+
+        emit_bin_ids = bin_ids[emit_mask]
+        emit_rows = data[emit_mask]
+        if emit_rows.size == 0:
+            return data[:0]
+
+        unique_bins, start_pos, counts = np.unique(
+            emit_bin_ids, return_index=True, return_counts=True
+        )
+        reduced = np.zeros((unique_bins.size, emit_rows.shape[1]), dtype=np.float32)
+        for i, (pos, count) in enumerate(zip(start_pos, counts)):
+            reduced[i, :] = emit_rows[pos:pos + count].mean(axis=0, dtype=np.float64)
+        return reduced
 
     @staticmethod
     def _round_fs(raw: float) -> float:
@@ -210,9 +305,11 @@ class OpenEphysLSLStreamer:
         Also measures empirical sample throughput so the caller can
         cross-validate the header-reported ``sample_rate``.
 
-        Returns ``(n_channels, measured_fs)`` where *measured_fs* is
-        samples-per-second computed from ``global_sample_index`` (header-
-        based per-channel index, not the raw payload byte count).
+        Returns ``(n_channels, measured_fs, cursor_source)`` where
+        *measured_fs* is samples-per-second computed from actual payload
+        samples on the reference channel when available, falling back to
+        the header-based global index only if payload counters are not yet
+        advancing.
         """
         import time as _t
 
@@ -221,9 +318,12 @@ class OpenEphysLSLStreamer:
         stable_since = start
         channels_stable = False
 
-        # snapshot the per-channel sample index at start
+        # Snapshot both payload and header counters. Payload samples reflect
+        # what was actually delivered over ZMQ; header indices may reflect a
+        # higher-rate hardware clock domain.
         with self.client._lock:
-            idx_t0 = int(self.client.global_sample_index)
+            payload_t0 = int(getattr(self.client, "total_samples_written", 0))
+            header_t0 = int(self.client.global_sample_index)
 
         while (_t.time() - start) < timeout:
             with self.client._lock:
@@ -244,9 +344,17 @@ class OpenEphysLSLStreamer:
 
         elapsed = max(_t.time() - start, 1e-6)
         with self.client._lock:
-            idx_t1 = int(self.client.global_sample_index)
-        measured_fs = (idx_t1 - idx_t0) / elapsed
-        return prev_count, measured_fs
+            payload_t1 = int(getattr(self.client, "total_samples_written", 0))
+            header_t1 = int(self.client.global_sample_index)
+        payload_delta = max(payload_t1 - payload_t0, 0)
+        header_delta = max(header_t1 - header_t0, 0)
+        if payload_delta > 0:
+            measured_fs = payload_delta / elapsed
+            cursor_source = "payload"
+        else:
+            measured_fs = header_delta / elapsed
+            cursor_source = "header"
+        return prev_count, measured_fs, cursor_source
 
     def start(self):
         if self.running:
@@ -280,7 +388,7 @@ class OpenEphysLSLStreamer:
             )
 
         # Wait for channel count to stabilise (auto-detect)
-        n_detected, measured_fs = self._wait_for_channels(timeout=3.0)
+        n_detected, measured_fs, cursor_source = self._wait_for_channels(timeout=3.0)
 
         with self.client._lock:
             detected = sorted(self.client.seen_nums)
@@ -337,6 +445,10 @@ class OpenEphysLSLStreamer:
         header_fs = float(self.client.fs)
         self._header_fs = header_fs
         self._measured_fs = round(measured_fs)
+        self._cursor_source = cursor_source
+        self._source_fs = measured_fs if measured_fs > 0 else header_fs
+        self._pending_resample_idx = np.empty(0, dtype=np.int64)
+        self._pending_resample_rows = None
 
         if self.expected_fs > 0:
             # User explicitly chose a rate – honour it.
@@ -378,7 +490,7 @@ class OpenEphysLSLStreamer:
 
         # Sync drain cursor to global_sample_index (per-channel header index)
         with self.client._lock:
-            self._prev_idx = int(self.client.global_sample_index)
+            self._prev_idx = self._current_sample_cursor_locked()
 
         self.running = True
         self.last_poll = _now()
@@ -431,9 +543,9 @@ class OpenEphysLSLStreamer:
         n_emg = len(self.emg_ch_idx)
         n_adc = len(self.adc_ch_idx)
 
-        # Use global_sample_index (header-based per-channel index) as cursor.
+        # Use payload sample counts as the primary cursor when available.
         with self.client._lock:
-            cur_idx = int(self.client.global_sample_index)
+            cur_idx = self._current_sample_cursor_locked()
             if cur_idx < self._prev_idx:
                 self._prev_idx = cur_idx
                 info["error"] = "Source sample index reset; resynchronized to continuing playback."
@@ -469,6 +581,16 @@ class OpenEphysLSLStreamer:
         # Transpose to (n_samples, n_channels)
         emg = emg_arr.T  # (n_new, n_emg)
         adc = adc_arr.T  # (n_new, n_adc)
+        if n_emg > 0 or n_adc > 0:
+            combined = np.concatenate((emg, adc), axis=1) if n_adc > 0 else emg
+            reduced = self._maybe_downsample_chunk(combined)
+            if n_adc > 0:
+                emg = reduced[:, :n_emg]
+                adc = reduced[:, n_emg:]
+            else:
+                emg = reduced
+                adc = np.zeros((reduced.shape[0], 0), dtype=np.float32)
+
         n_samples = emg.shape[0]
         info["channels"] = n_emg
         info["emg_shape"] = emg.shape  # (n_samples, n_emg)
@@ -628,13 +750,17 @@ class StreamerWindow(QMainWindow):
         self.ch_edit.setValue(self.args.channels)
         cg.addWidget(self.ch_edit, 1, 1)
 
-        cg.addWidget(QLabel("Fs (Hz)"), 1, 2)
+        cg.addWidget(QLabel("LSL Out (Hz)"), 1, 2)
         self.fs_edit = QSpinBox()
         self.fs_edit.setRange(0, 100000)
         self.fs_edit.setSpecialValueText("Auto")
         self.fs_edit.setValue(int(self.args.fs))
         self.fs_edit.setFixedWidth(80)
         cg.addWidget(self.fs_edit, 1, 3)
+
+        self.fs_hint = QLabel("0 = follow the incoming source rate")
+        self.fs_hint.setStyleSheet("color: #8f98a4; font-size: 11px;")
+        cg.addWidget(self.fs_hint, 2, 2, 1, 2)
 
         layout.addWidget(conn_group)
 
@@ -667,14 +793,18 @@ class StreamerWindow(QMainWindow):
         self.ch_info = QLabel("Channels: EMG=0  ADC=0")
         self.emg_shape = QLabel("EMG: —")
         self.adc_shape = QLabel("ADC: —")
+        self.fs_info = QLabel(
+            _fs_summary(self.args.fs, 0.0, 0.0, header_fs=0.0, measured_fs=0.0)
+        )
         self.emg_stats = QLabel("EMG RMS: N/A  |  \u03c3: N/A")
         self.imu_stats = QLabel("IMU \u03c3: N/A  |  Mag \u03c3: N/A")
-        self.rate = QLabel("Rate: N/A")
+        self.rate = QLabel("Loop: N/A")
 
         sl.addWidget(self.status)
         sl.addWidget(self.ch_info)
         sl.addWidget(self.emg_shape)
         sl.addWidget(self.adc_shape)
+        sl.addWidget(self.fs_info)
         sl.addWidget(self.emg_stats)
         sl.addWidget(self.imu_stats)
         sl.addWidget(self.rate)
@@ -755,15 +885,22 @@ class StreamerWindow(QMainWindow):
 
         self.status.setText("Streaming")
         self.status.setStyleSheet("color: #44ff44; font-weight: bold; font-size: 14px;")
-        # Update channel count and fs from auto-detection
+        # Update channel count but keep the requested LSL output rate control unchanged.
         self.ch_edit.setValue(self.streamer.emg_channels)
-        if self.streamer.detected_fs > 0:
-            self.fs_edit.setValue(int(self.streamer.detected_fs))
         n_emg = len(self.streamer.emg_ch_idx)
         n_adc = len(self.streamer.adc_ch_idx)
         self.ch_info.setText(
             f"Channels: EMG={n_emg} ({', '.join(self.streamer.emg_labels[:4])}{'...' if n_emg > 4 else ''})  "
             f"ADC={n_adc}{' (' + ', '.join(self.streamer.adc_labels) + ')' if n_adc else ''}"
+        )
+        self.fs_info.setText(
+            _fs_summary(
+                self.streamer.expected_fs,
+                self.streamer._source_fs,
+                self.streamer.detected_fs,
+                header_fs=self.streamer._header_fs,
+                measured_fs=self.streamer._measured_fs,
+            )
         )
         self.reminder.hide()
         self.btn_start.setEnabled(False)
@@ -776,6 +913,10 @@ class StreamerWindow(QMainWindow):
         self.streamer = None
         self.status.setText("Disconnected")
         self.status.setStyleSheet("color: #ff6666; font-weight: bold; font-size: 14px;")
+        self.fs_info.setText(
+            _fs_summary(self.fs_edit.value(), 0.0, 0.0, header_fs=0.0, measured_fs=0.0)
+        )
+        self.rate.setText("Loop: N/A")
         self.reminder.show()
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -806,20 +947,27 @@ class StreamerWindow(QMainWindow):
 
         try:
             info = self.streamer.poll_once()
-            fs_str = f"{self.streamer.detected_fs:.0f}" if self.streamer.detected_fs > 0 else "?"
-            hdr = f"{self.streamer._header_fs:.0f}" if self.streamer._header_fs > 0 else "?"
-            meas = f"{self.streamer._measured_fs}" if self.streamer._measured_fs > 0 else "?"
+            fs_str = _format_rate_value(self.streamer.detected_fs)
             eshape = info.get("emg_shape", (0, 0))
             ashape = info.get("adc_shape", (0, 0))
             self.emg_shape.setText(
-                f"EMG: {info['total_emg']:,} samples  |  chunk {eshape}  @ {fs_str} Hz"
+                f"EMG: {info['total_emg']:,} samples  |  chunk {eshape}  |  LSL out @ {fs_str} Hz"
             )
             self.adc_shape.setText(
                 f"ADC: {info.get('total_adc', 0):,} samples  |  chunk {ashape}"
                 if ashape[1] > 0 else "ADC: none"
             )
+            self.fs_info.setText(
+                _fs_summary(
+                    self.streamer.expected_fs,
+                    self.streamer._source_fs,
+                    self.streamer.detected_fs,
+                    header_fs=self.streamer._header_fs,
+                    measured_fs=self.streamer._measured_fs,
+                )
+            )
             self.rate.setText(
-                f"Rate: {info['rate_hz']:.1f} Hz  |  fs: header={hdr}  measured={meas}"
+                f"Loop: {info['rate_hz']:.1f} Hz  |  source={_format_rate_value(self.streamer._source_fs)} Hz  |  emitted={fs_str} Hz"
             )
             if info["chunk"] > 0:
                 self.emg_stats.setText(
@@ -863,8 +1011,7 @@ def run_cli(args):
         f"Streaming LSL: EMG='{args.emg_stream_name}' ({n_emg}ch)"
         f", ADC='{args.adc_stream_name}' ({n_adc}ch)"
         f", IMU='{args.imu_stream_name}'"
-        f" @ {streamer.detected_fs:.0f} Hz"
-        f"  (header={streamer._header_fs:.0f}, measured={streamer._measured_fs})"
+        f"  [{_fs_summary(args.fs, streamer._source_fs, streamer.detected_fs, header_fs=streamer._header_fs, measured_fs=streamer._measured_fs)}]"
     )
     if n_emg:
         print(f"  EMG channels: {streamer.emg_labels}")
@@ -895,7 +1042,7 @@ def build_arg_parser():
         "--fs",
         type=float,
         default=0.0,
-        help="Sampling rate in Hz (0 = auto-detect from stream)",
+        help="Requested LSL output rate in Hz (0 = follow the incoming source stream rate)",
     )
     p.add_argument(
         "--channels", type=int, default=0, help="EMG channel count (0 = auto-detect)"
