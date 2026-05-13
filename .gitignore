@@ -30,6 +30,9 @@ gesture_classifier/*.pth
 /temp/
 temp/*
 
+# Local example datasets
+examples/joint_angle_regression/data/
+
 # Distribution / packaging
 .Python
 env/

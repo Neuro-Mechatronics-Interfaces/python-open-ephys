@@ -90,9 +90,14 @@ def _fs_summary(
 
 
 def build_outlets(
-    emg_stream_name: str, imu_stream_name: str, fs: float, emg_channels: int,
-    adc_stream_name: str = "OpenEphys_ADC", adc_channels: int = 0,
-    emg_labels: list = None, adc_labels: list = None,
+    emg_stream_name: str,
+    imu_stream_name: str,
+    fs: float,
+    emg_channels: int,
+    adc_stream_name: str = "OpenEphys_ADC",
+    adc_channels: int = 0,
+    emg_labels: list = None,
+    adc_labels: list = None,
 ):
     emg_info = StreamInfo(
         emg_stream_name,
@@ -105,7 +110,9 @@ def build_outlets(
     emg_channels_xml = emg_info.desc().append_child("channels")
     for idx in range(int(emg_channels)):
         ch = emg_channels_xml.append_child("channel")
-        lbl = emg_labels[idx] if emg_labels and idx < len(emg_labels) else f"EMG{idx + 1}"
+        lbl = (
+            emg_labels[idx] if emg_labels and idx < len(emg_labels) else f"EMG{idx + 1}"
+        )
         ch.append_child_value("label", lbl)
         ch.append_child_value("unit", "uV")
         ch.append_child_value("type", "emg")
@@ -150,7 +157,11 @@ def build_outlets(
         adc_channels_xml = adc_info.desc().append_child("channels")
         for idx in range(int(adc_channels)):
             ch = adc_channels_xml.append_child("channel")
-            lbl = adc_labels[idx] if adc_labels and idx < len(adc_labels) else f"ADC{idx + 1}"
+            lbl = (
+                adc_labels[idx]
+                if adc_labels and idx < len(adc_labels)
+                else f"ADC{idx + 1}"
+            )
             ch.append_child_value("label", lbl)
             ch.append_child_value("unit", "V")
             ch.append_child_value("type", "adc")
@@ -246,7 +257,9 @@ class OpenEphysLSLStreamer:
             return data
 
         source_fs = float(self._source_fs)
-        target_fs = float(self.detected_fs if self.detected_fs > 0 else self.expected_fs)
+        target_fs = float(
+            self.detected_fs if self.detected_fs > 0 else self.expected_fs
+        )
         if source_fs <= 0.0 or target_fs <= 0.0 or source_fs <= (target_fs * 1.01):
             return data
 
@@ -257,7 +270,9 @@ class OpenEphysLSLStreamer:
             data = np.vstack((self._pending_resample_rows, data))
             abs_idx = np.concatenate((self._pending_resample_idx, abs_idx))
 
-        bin_ids = np.floor((abs_idx.astype(np.float64) * target_fs) / source_fs).astype(np.int64)
+        bin_ids = np.floor((abs_idx.astype(np.float64) * target_fs) / source_fs).astype(
+            np.int64
+        )
         if bin_ids.size == 0:
             return data[:0]
 
@@ -282,7 +297,7 @@ class OpenEphysLSLStreamer:
         )
         reduced = np.zeros((unique_bins.size, emit_rows.shape[1]), dtype=np.float32)
         for i, (pos, count) in enumerate(zip(start_pos, counts)):
-            reduced[i, :] = emit_rows[pos:pos + count].mean(axis=0, dtype=np.float64)
+            reduced[i, :] = emit_rows[pos : pos + count].mean(axis=0, dtype=np.float64)
         return reduced
 
     @staticmethod
@@ -290,8 +305,25 @@ class OpenEphysLSLStreamer:
         """Round a measured fs to the nearest 'standard' rate."""
         # Common DAQ rates
         standard = [
-            1000, 1250, 1500, 2000, 2500, 3000, 3333, 4000, 5000,
-            6250, 8000, 10000, 12500, 15000, 20000, 25000, 30000, 40000, 50000,
+            1000,
+            1250,
+            1500,
+            2000,
+            2500,
+            3000,
+            3333,
+            4000,
+            5000,
+            6250,
+            8000,
+            10000,
+            12500,
+            15000,
+            20000,
+            25000,
+            30000,
+            40000,
+            50000,
         ]
         best = min(standard, key=lambda s: abs(s - raw))
         # Only snap if within 10 %
@@ -392,7 +424,9 @@ class OpenEphysLSLStreamer:
 
         with self.client._lock:
             detected = sorted(self.client.seen_nums)
-            name_map = dict(self.client._name_by_index)  # {ch_idx: "CH1" / "ADC1" / ...}
+            name_map = dict(
+                self.client._name_by_index
+            )  # {ch_idx: "CH1" / "ADC1" / ...}
 
         if not detected:
             self.client.stop()
@@ -460,6 +494,7 @@ class OpenEphysLSLStreamer:
             # Warn if header claims something very different
             if header_fs > 0 and abs(header_fs - rounded) / max(header_fs, 1) > 0.15:
                 import warnings
+
                 warnings.warn(
                     f"ZMQ header reports sample_rate={header_fs:.0f} Hz but "
                     f"empirical throughput is ~{rounded:.0f} Hz. "
@@ -471,9 +506,14 @@ class OpenEphysLSLStreamer:
             self.detected_fs = 2000.0
         fs = self.detected_fs
         self.emg_outlet, self.imu_outlet, self.adc_outlet = build_outlets(
-            self.emg_stream_name, self.imu_stream_name, fs, self.emg_channels,
-            adc_stream_name=self.adc_stream_name, adc_channels=self.n_adc,
-            emg_labels=self.emg_labels, adc_labels=self.adc_labels,
+            self.emg_stream_name,
+            self.imu_stream_name,
+            fs,
+            self.emg_channels,
+            adc_stream_name=self.adc_stream_name,
+            adc_channels=self.n_adc,
+            emg_labels=self.emg_labels,
+            adc_labels=self.adc_labels,
         )
 
         if self.imu_enabled and SLEEVEIMU_AVAILABLE and SleeveIMUClient is not None:
@@ -548,7 +588,9 @@ class OpenEphysLSLStreamer:
             cur_idx = self._current_sample_cursor_locked()
             if cur_idx < self._prev_idx:
                 self._prev_idx = cur_idx
-                info["error"] = "Source sample index reset; resynchronized to continuing playback."
+                info["error"] = (
+                    "Source sample index reset; resynchronized to continuing playback."
+                )
                 self.last_error = info["error"]
                 return info
             n_new = cur_idx - self._prev_idx
@@ -955,7 +997,8 @@ class StreamerWindow(QMainWindow):
             )
             self.adc_shape.setText(
                 f"ADC: {info.get('total_adc', 0):,} samples  |  chunk {ashape}"
-                if ashape[1] > 0 else "ADC: none"
+                if ashape[1] > 0
+                else "ADC: none"
             )
             self.fs_info.setText(
                 _fs_summary(
@@ -1022,7 +1065,7 @@ def run_cli(args):
             info = streamer.poll_once()
             if info["chunk"] > 0:
                 print(
-                    f"chunk={info['chunk']} emg={info['total_emg']} adc={info.get('total_adc',0)} "
+                    f"chunk={info['chunk']} emg={info['total_emg']} adc={info.get('total_adc', 0)} "
                     f"rate={info['rate_hz']:.1f}Hz rms={info['emg_rms']:.3f}",
                     end="\r",
                     flush=True,
