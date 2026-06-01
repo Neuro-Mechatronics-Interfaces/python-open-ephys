@@ -119,3 +119,56 @@ def test_load_session_prefers_stream_local_files(tmp_path):
         session["amplifier_data"], np.array([[101.0, 202.0]], dtype=np.float32)
     )
     np.testing.assert_allclose(session["t_amplifier"], np.array([0.01, 0.011]))
+
+
+def test_load_session_recovers_from_off_by_one_num_channels(tmp_path):
+    # Regression: .oebin declares num_channels that disagrees with the actual
+    # `channels` array and recorded data (e.g. 136 declared vs 135 written).
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    n_real = 3
+    meta = {
+        "continuous": [
+            {
+                "sample_rate": 1000.0,
+                "num_channels": n_real + 1,  # wrong / off-by-one
+                "channels": [
+                    {"channel_name": f"CH{i}", "bit_volts": 1.0, "units": "uV"}
+                    for i in range(n_real)
+                ],
+            }
+        ]
+    }
+    oebin = _write_oebin_session(session_dir, meta)
+    samples = np.arange(n_real * 4, dtype=np.int16).reshape(4, n_real)
+    _write_continuous_block(session_dir, samples, np.arange(4))
+
+    session = load_open_ephys_session(oebin)
+
+    assert session["amplifier_data"].shape == (n_real, 4)
+    assert session["channel_names"] == ["CH0", "CH1", "CH2"]
+
+
+def test_load_session_raises_clear_error_when_truncated(tmp_path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    meta = {
+        "continuous": [
+            {
+                "sample_rate": 1000.0,
+                "num_channels": 4,
+                "channels": [
+                    {"channel_name": f"CH{i}", "bit_volts": 1.0, "units": "uV"}
+                    for i in range(4)
+                ],
+            }
+        ]
+    }
+    oebin = _write_oebin_session(session_dir, meta)
+    # 9 int16 samples: divisible by neither 4 nor anything else sensible.
+    (session_dir / "continuous.dat").write_bytes(
+        np.arange(9, dtype="<i2").tobytes()
+    )
+
+    with pytest.raises(ValueError, match="not divisible by any known channel count"):
+        load_open_ephys_session(oebin)

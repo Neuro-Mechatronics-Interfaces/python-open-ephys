@@ -1,0 +1,12 @@
+{
+  "notes": [
+    "Default built-in physical layout for the 128-channel HD-EMG array used by the 3D arm viewer.",
+    "All values are in millimeters.",
+    "Columns 2, 4, 6, 8, and 10 start 7.5 mm higher to create the diagonal stagger."
+  ],
+  "layout_name": "hdemg128_vertical_columns",
+  "channel_count": 128,
+  "column_lengths": [13, 13, 13, 13, 12, 12, 13, 13, 13, 13],
+  "column_pitch_mm": 15.0,
+  "column_start_offsets_mm": [0.0, 7.5, 0.0, 7.5, 0.0, 7.5, 0.0, 7.5, 0.0, 7.5]
+}

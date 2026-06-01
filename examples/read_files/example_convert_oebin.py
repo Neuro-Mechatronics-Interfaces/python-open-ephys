@@ -1,5 +1,26 @@
 """
-Demo that shows how to load data from a .oebin file using pyoephys.
+Convert an Open Ephys ``.oebin`` recording to NPZ and/or DEMUSE MAT files.
+
+Workflow
+--------
+1. Select a ``.oebin`` file (CLI argument or file-picker dialog).
+2. Answer a few dialog boxes:
+     * Split the unipolar EMG channels into separate files? (default: yes,
+       64 EMG channels per file). ADC/AUX channels are kept in *every* file.
+     * Save a ``.npz`` file?
+     * Save a DEMUSE ``.mat`` file?
+3. Files are named after the *custom* recording folder (the folder that
+   contains ``Record Node NNN/...``) and written into ``npz/`` and ``mat/``
+   sub-folders next to that custom folder.
+
+Example layout::
+
+    <base>/fdi-sweep/Record Node 101/experiment1/recording1/structure.oebin
+      -> <base>/npz/fdi-sweep_emg_data.npz
+      -> <base>/mat/fdi-sweep_demuse.mat
+
+Every dialog can be pre-answered from the command line (handy for scripting or
+headless runs); supplying a flag skips the corresponding dialog.
 """
 import argparse
 import os
@@ -9,8 +30,10 @@ from datetime import datetime
 from math import gcd
 
 import numpy as np
-from pyoephys.io import load_oebin_file, prompt_file
+from pyoephys.io import load_oebin_file, prompt_file, prompt_text, prompt_yes_no
 from pyoephys.io._npz_utils import save_as_npz
+
+DEFAULT_EMG_PER_FILE = 64
 
 
 def _as_matlab_cell_row(values: list[str]) -> np.ndarray:
@@ -33,13 +56,34 @@ def _parse_recording_datetime(recording_name: str) -> tuple[str, str, str]:
 
 
 def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Load an Open Ephys recording and export NPZ / MAT files.")
+    parser = argparse.ArgumentParser(
+        description="Convert an Open Ephys recording into NPZ / DEMUSE MAT files."
+    )
     parser.add_argument("path", nargs="?", help="Path to a .oebin file or recording folder.")
     parser.add_argument(
         "--downsample-to",
         type=float,
         default=None,
         help="Optional target sample rate in Hz for exported data, for example 4000.",
+    )
+    parser.add_argument(
+        "--channels-per-file",
+        type=int,
+        default=None,
+        help=(
+            "Number of unipolar EMG channels per output file (ADC/AUX channels are "
+            "always included). Use 0 to keep all channels in a single file. "
+            "If omitted, a dialog asks (default 64)."
+        ),
+    )
+    parser.add_argument("--npz", dest="npz", action="store_true", default=None, help="Save a .npz file (skips the dialog).")
+    parser.add_argument("--no-npz", dest="npz", action="store_false", help="Do not save a .npz file (skips the dialog).")
+    parser.add_argument("--mat", dest="mat", action="store_true", default=None, help="Save a DEMUSE .mat file (skips the dialog).")
+    parser.add_argument("--no-mat", dest="mat", action="store_false", help="Do not save a DEMUSE .mat file (skips the dialog).")
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Never show dialogs; use CLI flags and defaults instead.",
     )
     return parser.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -57,22 +101,47 @@ def resolve_oebin_path(path_arg: str | None = None) -> str:
     return path
 
 
-def resolve_export_location(input_path: str, result: dict) -> tuple[str, str]:
-    recording_root = result.get("source_path")
-    if not recording_root:
-        recording_root = os.path.dirname(input_path) if input_path.lower().endswith(".oebin") else input_path
+def find_recording_layout(input_path: str) -> tuple[str, str]:
+    """
+    Resolve the *custom* recording folder name and the directory the export
+    folders should live in.
 
-    recording_root = os.path.normpath(recording_root)
-    export_root = os.path.dirname(recording_root) or recording_root
-    label = os.path.basename(recording_root) or str(result.get("recording_name", "open_ephys_recording"))
-    return export_root, label
+    The Open Ephys directory layout is::
+
+        <export_base>/<custom_name>/Record Node NNN/experimentX/recordingY/structure.oebin
+
+    so the custom folder is the parent of the ``Record Node NNN`` directory and
+    the export base is that custom folder's parent. If no ``Record Node`` folder
+    is found, fall back to the folder that directly contains ``structure.oebin``.
+    """
+    if input_path.lower().endswith(".oebin"):
+        recording_dir = os.path.dirname(input_path)
+    else:
+        recording_dir = input_path
+    recording_dir = os.path.normpath(os.path.abspath(recording_dir))
+
+    parts = recording_dir.split(os.sep)
+    record_node_idx = None
+    for idx, part in enumerate(parts):
+        if re.match(r"(?i)record\s*node", part):
+            record_node_idx = idx
+            break
+
+    if record_node_idx is not None and record_node_idx >= 1:
+        custom_name = parts[record_node_idx - 1]
+        export_base = os.sep.join(parts[:record_node_idx - 1]) or recording_dir
+    else:
+        custom_name = os.path.basename(recording_dir)
+        export_base = os.path.dirname(recording_dir) or recording_dir
+
+    return custom_name, export_base
 
 
 def prepare_result_for_export(input_path: str, result: dict) -> tuple[dict, str, str]:
-    export_root, label = resolve_export_location(input_path, result)
+    custom_name, export_base = find_recording_layout(input_path)
     export_result = dict(result)
-    export_result.setdefault("source_path", export_root)
-    export_result.setdefault("recording_name", label)
+    export_result["source_path"] = export_base
+    export_result["recording_name"] = custom_name
 
     timestamps = np.asarray(export_result.get("t_amplifier"), dtype=np.float64).reshape(-1)
     if timestamps.size:
@@ -82,12 +151,12 @@ def prepare_result_for_export(input_path: str, result: dict) -> tuple[dict, str,
     else:
         clock_start_offset_sec = 0.0
 
-    clock_start_date, clock_start_time, clock_start_iso = _parse_recording_datetime(export_result["recording_name"])
+    clock_start_date, clock_start_time, clock_start_iso = _parse_recording_datetime(custom_name)
     export_result["clock_start_offset_sec"] = np.float64(clock_start_offset_sec)
     export_result["clock_start_date"] = clock_start_date
     export_result["clock_start_time"] = clock_start_time
     export_result["clock_start_iso"] = clock_start_iso
-    return export_result, export_root, label
+    return export_result, export_base, custom_name
 
 
 def downsample_result(result: dict, target_sample_rate: float | None) -> dict:
@@ -138,6 +207,50 @@ def downsample_result(result: dict, target_sample_rate: float | None) -> dict:
         downsampled["board_adc_data"] = resample_poly(board_adc_arr, up, down, axis=1).astype(np.float32, copy=False)
 
     return downsampled
+
+
+def _is_auxiliary_channel(name: str) -> bool:
+    """ADC/AUX board channels are auxiliary (not unipolar EMG)."""
+    upper = str(name).strip().upper()
+    return upper.startswith("ADC") or upper.startswith("AUX")
+
+
+def build_channel_subsets(result: dict, channels_per_file: int | None) -> list[tuple[str, dict]]:
+    """
+    Split the unipolar EMG channels into groups of ``channels_per_file`` while
+    keeping every ADC/AUX channel in each group. Returns a list of
+    ``(filename_suffix, subset_result)`` tuples.
+
+    ``channels_per_file`` of ``None`` / ``0`` (or a value that covers all EMG
+    channels) yields a single, unsplit result.
+    """
+    emg = np.asarray(result["amplifier_data"])
+    n_channels = emg.shape[0]
+
+    names = [str(n) for n in result.get("channel_names", [])]
+    if len(names) != n_channels:
+        names = [f"CH{i + 1}" for i in range(n_channels)]
+
+    emg_idx = [i for i, name in enumerate(names) if not _is_auxiliary_channel(name)]
+    aux_idx = [i for i, name in enumerate(names) if _is_auxiliary_channel(name)]
+
+    if not channels_per_file or channels_per_file <= 0 or channels_per_file >= len(emg_idx):
+        return [("", result)]
+
+    base_name = str(result.get("recording_name", "recording"))
+    subsets: list[tuple[str, dict]] = []
+    for start in range(0, len(emg_idx), channels_per_file):
+        chunk = emg_idx[start:start + channels_per_file]
+        rows = chunk + aux_idx
+        suffix = f"_emg{start + 1:03d}-{start + len(chunk):03d}"
+
+        subset = dict(result)
+        subset["amplifier_data"] = emg[rows, :]
+        subset["channel_names"] = [names[i] for i in rows]
+        subset["recording_name"] = base_name + suffix
+        subsets.append((suffix, subset))
+
+    return subsets
 
 
 def save_as_demuse_mat(
@@ -230,33 +343,96 @@ def save_as_demuse_mat(
     print(f"DEMUSE MAT data saved to {file_path}")
     return file_path
 
-if __name__ == "__main__":
 
-    save_npz = True
-    save_demuse = True
+def _ask_yes_no(title: str, message: str, cli_value: bool | None, interactive: bool, default: bool) -> bool:
+    if cli_value is not None:
+        return cli_value
+    if not interactive:
+        return default
+    try:
+        return prompt_yes_no(title, message)
+    except Exception:
+        return default
 
-    # ================ Load the data ================
-    #path = r'G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_06_13\raw\Dynamic5kHz\Record Node 101\experiment2\recording1\structure.oebin'
-    #path = r'G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\Open_Ephys\Jonathan\2025_05_07\raw\DynamicFingers\Record Node 105\experiment1\recording1\structure.oebin'
-    #path = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_06_13\raw\Dynamic1kHz\Record Node 101\experiment1\recording1\structure.oebin"
-    #path = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_07_31\raw"
-    
-    args = parse_cli_args()
+
+def _ask_channels_per_file(cli_value: int | None, interactive: bool) -> int:
+    if cli_value is not None:
+        return max(0, cli_value)
+    if not interactive:
+        return DEFAULT_EMG_PER_FILE
+
+    try:
+        split = prompt_yes_no(
+            "Split EMG channels",
+            "Save the unipolar EMG channels in separate files?\n"
+            f"(Default: {DEFAULT_EMG_PER_FILE} EMG channels per file. "
+            "ADC/AUX channels are kept in every file.)",
+        )
+    except Exception:
+        return DEFAULT_EMG_PER_FILE
+
+    if not split:
+        return 0
+
+    try:
+        text = prompt_text(
+            "Channels per file",
+            "Number of unipolar EMG channels per file:",
+            str(DEFAULT_EMG_PER_FILE),
+        )
+    except Exception:
+        return DEFAULT_EMG_PER_FILE
+
+    if text and text.strip().lstrip("-").isdigit():
+        return max(0, int(text.strip()))
+    return DEFAULT_EMG_PER_FILE
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_cli_args(argv)
+    interactive = not args.non_interactive
+
     path = resolve_oebin_path(args.path)
     result = load_oebin_file(path)
     result = downsample_result(result, args.downsample_to)
 
-    # ================ Print some info ================
     print(result.keys())
     print(f"Shape of emg_data: {result['amplifier_data'].shape}")
     print(f"Sampling frequency: {result['sample_rate']} Hz")
     if 'board_adc_data' in result and len(result['board_adc_data']) > 0:
         print(f"Shape of board_adc_data: {result['board_adc_data'].shape}")
-    print(f"Time vector: {result.get('t_amplifier')[:10]}...")  # Print first 10 timestamps
+    print(f"Time vector: {result.get('t_amplifier')[:10]}...")
 
-    # =========== Save the pyoephys data to a numpy format ===========
-    export_result, export_root, label = prepare_result_for_export(path, result)
-    if save_npz:
-        save_as_npz(export_result, os.path.join(export_root, f"{label}_emg_data.npz"))
-    if save_demuse:
-        save_as_demuse_mat(export_result, os.path.join(export_root, f"{label}_demuse.mat"))
+    export_result, export_base, custom_name = prepare_result_for_export(path, result)
+
+    channels_per_file = _ask_channels_per_file(args.channels_per_file, interactive)
+    save_npz = _ask_yes_no("Save NPZ", "Save a .npz file?", args.npz, interactive, default=True)
+    save_mat = _ask_yes_no("Save MAT", "Save a DEMUSE .mat file?", args.mat, interactive, default=True)
+
+    if not (save_npz or save_mat):
+        print("No output format selected; nothing to save.")
+        return
+
+    subsets = build_channel_subsets(export_result, channels_per_file)
+
+    npz_dir = os.path.join(export_base, "npz")
+    mat_dir = os.path.join(export_base, "mat")
+
+    print(
+        f"Recording name: {custom_name} | export base: {export_base} | "
+        f"{len(subsets)} file(s) | EMG/file: "
+        f"{'all' if channels_per_file in (0, None) else channels_per_file}"
+    )
+
+    for suffix, subset in subsets:
+        base = custom_name + suffix
+        if save_npz:
+            os.makedirs(npz_dir, exist_ok=True)
+            save_as_npz(subset, os.path.join(npz_dir, f"{base}_emg_data.npz"))
+        if save_mat:
+            os.makedirs(mat_dir, exist_ok=True)
+            save_as_demuse_mat(subset, os.path.join(mat_dir, f"{base}_demuse.mat"))
+
+
+if __name__ == "__main__":
+    main()

@@ -107,15 +107,11 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
         c.get("channel_name") or c.get("name") or f"ch{i}"
         for i, c in enumerate(channels_meta)
     ]
-    n_channels = int(
-        stream.get("num_channels")
-        or stream.get("channel_count")
-        or len(channel_names)
-        or 0
+    declared_channels = int(
+        stream.get("num_channels") or stream.get("channel_count") or 0
     )
-    if n_channels == 0:
-        n_channels = len(channel_names)
-    if n_channels == 0:
+    listed_channels = len(channel_names)
+    if declared_channels == 0 and listed_channels == 0:
         raise RuntimeError("Cannot determine number of channels from .oebin")
 
     # Locate binary files for the selected continuous stream.
@@ -131,10 +127,7 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
 
     # Read int16 interleaved -> (S, C) -> transpose to (C, S)
     raw = np.fromfile(dat, dtype="<i2")
-    if raw.size % n_channels != 0:
-        raise ValueError(
-            f"continuous.dat size {raw.size} not divisible by n_channels={n_channels}"
-        )
+    n_channels = _resolve_channel_count(raw.size, listed_channels, declared_channels)
     samples = raw.size // n_channels
     y_i16 = raw.reshape(samples, n_channels)
     # Scale to microvolts using bitVolts if available, else 0.195 µV/count
@@ -156,6 +149,36 @@ def load_open_ephys_session(path: str | os.PathLike) -> Dict[str, Any]:
         channel_names = [f"ch{i}" for i in range(n_channels)]
 
     return SessionData(y, t, fs, channel_names).__dict__
+
+
+def _resolve_channel_count(
+    total_samples: int, listed_channels: int, declared_channels: int
+) -> int:
+    """
+    Determine how many interleaved channels are in continuous.dat.
+
+    The per-channel ``channels`` array in the .oebin is the authoritative
+    description of what is interleaved in continuous.dat, so its length is
+    preferred over the redundant ``num_channels``/``channel_count`` field, which
+    is occasionally off by a channel (e.g. it counts an aux/sync channel that was
+    not actually written to disk). Candidates are validated against the real file
+    size and the first one that divides it evenly wins.
+    """
+    candidates: List[int] = []
+    for c in (listed_channels, declared_channels):
+        if c and c > 0 and c not in candidates:
+            candidates.append(c)
+
+    for c in candidates:
+        if total_samples % c == 0:
+            return c
+
+    tried = ", ".join(str(c) for c in candidates) or "<none>"
+    raise ValueError(
+        f"continuous.dat size {total_samples} (int16 samples) is not divisible by "
+        f"any known channel count (tried: {tried}). The .oebin metadata likely "
+        f"disagrees with the recorded data, or continuous.dat is truncated/corrupt."
+    )
 
 
 def _load_oebin_meta(oebin_path: Path) -> dict:

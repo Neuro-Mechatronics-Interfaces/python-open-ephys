@@ -74,7 +74,7 @@ python -m pyoephys.applications._realtime_viewer --host 127.0.0.1 --channels 0:8
 
 The repository includes runnable examples for common workflows:
 
-- `examples/read_files/` for loading `.oebin` recordings and exporting session data.
+- `examples/read_files/` for inspecting `.oebin` metadata (`example_metadata_oebin.py`) and converting recordings to NPZ / DEMUSE MAT (`example_convert_oebin.py`).
 - `examples/interface/` for ZMQ, LSL, IMU, and hardware integration workflows.
 - `examples/applications/` for standalone viewers and analysis tools.
 - `examples/analysis/`, `examples/benchmarks/`, and `examples/visualization/` for downstream analysis and diagnostics.

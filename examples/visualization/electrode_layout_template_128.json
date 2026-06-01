@@ -1,0 +1,27 @@
+{
+  "notes": [
+    "Custom override template for the arm viewer.",
+    "The built-in 128-channel physical array is stored separately in electrode_layout_default_128.json.",
+    "This template intentionally shows only 8 example channels so local adjustments stay readable.",
+    "All values are in millimeters.",
+    "column_* arrays follow the 10 vertical HD-EMG columns.",
+    "channel_offsets_mm applies additive [dx, dy, dz] after column transforms.",
+    "channel_positions_mm replaces a channel with an absolute [x, y, z] position.",
+    "positions_mm can replace the entire default layout with explicit coordinates."
+  ],
+  "global_offset_mm": [0.0, 0.0, 0.0],
+  "column_angle_offsets_deg": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "column_radial_offsets_mm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "column_z_offsets_mm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "channel_offsets_mm": {
+    "1": [0.0, 0.0, 0.0],
+    "2": [0.0, 0.0, 0.0],
+    "3": [0.0, 0.0, 0.0],
+    "4": [0.0, 0.0, 0.0],
+    "5": [0.0, 0.0, 0.0],
+    "6": [0.0, 0.0, 0.0],
+    "7": [0.0, 0.0, 0.0],
+    "8": [0.0, 0.0, 0.0]
+  },
+  "channel_positions_mm": {}
+}

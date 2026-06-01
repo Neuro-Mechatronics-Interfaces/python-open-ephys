@@ -1,0 +1,54 @@
+{
+  "notes": [
+    "User-specific custom override file for this HD-EMG system.",
+    "This file is intentionally separate from electrode_layout_default_128.json so the built-in physical array definition stays unchanged.",
+    "The reference_hdemg_layout section below records the physical channel grouping and stagger pattern for this array.",
+    "Start by editing global, per-column, or per-channel values here.",
+    "All values are in millimeters.",
+    "column_* arrays follow the 10 vertical HD-EMG columns.",
+    "channel_offsets_mm applies additive [dx, dy, dz] after column transforms.",
+    "channel_positions_mm replaces a channel with an absolute [x, y, z] position.",
+    "positions_mm can replace the entire default layout with explicit coordinates."
+  ],
+  "reference_hdemg_layout": {
+    "channel_count": 128,
+    "column_pitch_mm": 15.0,
+    "stagger_offset_mm": 7.5,
+    "column_lengths": [13, 13, 13, 13, 12, 12, 13, 13, 13, 13],
+    "column_start_offsets_mm": [0.0, 7.5, 0.0, 7.5, 0.0, 7.5, 0.0, 7.5, 0.0, 7.5],
+    "column_channel_ranges": [
+      [1, 13],
+      [14, 26],
+      [27, 39],
+      [40, 52],
+      [53, 64],
+      [65, 76],
+      [77, 89],
+      [90, 102],
+      [103, 115],
+      [116, 128]
+    ],
+    "staggered_column_pairs": [
+      {"columns": [1, 2], "start_offsets_mm": [0.0, 7.5]},
+      {"columns": [3, 4], "start_offsets_mm": [0.0, 7.5]},
+      {"columns": [5, 6], "start_offsets_mm": [0.0, 7.5]},
+      {"columns": [7, 8], "start_offsets_mm": [0.0, 7.5]},
+      {"columns": [9, 10], "start_offsets_mm": [0.0, 7.5]}
+    ]
+  },
+  "global_offset_mm": [0.0, 0.0, 0.0],
+  "column_angle_offsets_deg": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "column_radial_offsets_mm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "column_z_offsets_mm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "channel_offsets_mm": {
+    "1": [0.0, 0.0, 0.0],
+    "2": [0.0, 0.0, 0.0],
+    "3": [0.0, 0.0, 0.0],
+    "4": [0.0, 0.0, 0.0],
+    "5": [0.0, 0.0, 0.0],
+    "6": [0.0, 0.0, 0.0],
+    "7": [0.0, 0.0, 0.0],
+    "8": [0.0, 0.0, 0.0]
+  },
+  "channel_positions_mm": {}
+}
