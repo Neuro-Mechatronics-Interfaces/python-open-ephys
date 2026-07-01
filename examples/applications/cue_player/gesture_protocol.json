@@ -1,0 +1,63 @@
+{
+  "_comment": "Cue player protocol. Knob-style schema -- see cue_player.py docstring for the explicit-events alternative. All durations are in seconds.",
+
+  "ready_s": 1.0,
+  "hold_s": 5.0,
+  "rest_s": 1.0,
+  "intro_pad_s": 2.0,
+  "outro_pad_s": 2.0,
+
+  "calibration_postures": ["pronated", "neutral", "supinated"],
+  "calibration_hold_s": 5.0,
+  "_orientation_doc": "Each wrist orientation re-runs the full gesture list. Markers get a '@<orientation>' suffix (e.g. cue_start:index_flex@supinated:rep_3). Before each block a long READY cue 'posture_<orientation>' prompts the participant to rotate their wrist; posture_setup_s controls its duration.",
+  "gesture_orientations": ["pronated", "neutral", "supinated"],
+  "posture_setup_s": 8.0,
+  "reps": 8,
+  "_randomize_doc": "Set randomize_gestures to true to shuffle gesture order independently per orientation block. Add a 'seed' integer for reproducible randomization (same seed = same order every run).",
+  "randomize_gestures": false,
+
+  "_gesture_selection_rationale": "Narrowed to 8 gestures that maximally recruit wrist-crossing muscles (FDS, FDP, FPL, FCR, FCU, ECR, ECU, EDC), producing the largest EMG topography shift across wrist orientations. This set is designed to characterise orientation-dependent decoder degradation and validate IMU-gating. Excluded gestures are prefixed with '_' and kept for reference.",
+
+  "_gesture_groups": {
+    "_doc": "Grouped here for readability; the cue_player only consumes the flat 'gestures' list below. Edit either, but keep them in sync.",
+
+    "individual_finger_flex": {
+      "_included": ["thumb_flex", "index_flex"],
+      "_excluded": ["middle_flex", "ring_flex", "pinky_flex"],
+      "_exclusion_reason": "Middle/ring/pinky FDS patterns are near-indistinguishable from index_flex on surface electrodes; redundant for classification across orientations."
+    },
+    "individual_finger_extend": {
+      "_included": ["thumb_extend"],
+      "_excluded": ["index_extend", "middle_extend", "ring_extend", "pinky_extend"],
+      "_exclusion_reason": "thumb_extend included: EPL/EPB run in anatomically separate extensor compartments (1st/3rd) from EDC, shift distinctly across wrist orientations, and complete the thumb flex/extend pair. index_extend excluded: EIP co-activates EDC on surface arrays and clusters near hand_open. middle/ring/pinky extend excluded: pure EDC, indistinguishable from partial hand_open."
+    },
+    "thumb_opposition": {
+      "_included": ["pinch_thumb_index"],
+      "_excluded": ["pinch_thumb_middle", "pinch_thumb_ring", "pinch_thumb_pinky"],
+      "_exclusion_reason": "FPL + FDS-index pattern is the same across all pinch variants on surface EMG; redundant classes."
+    },
+    "whole_hand": {
+      "_included": ["fist_closed", "hand_open"],
+      "_excluded": ["hook_grip", "lumbrical_grip"],
+      "_exclusion_reason": "Hook/lumbrical involve intrinsics (lumbricals, interossei) which do not cross the wrist -- low orientation-dependency and hard for participants to isolate reliably."
+    },
+    "wrist": {
+      "_included": ["wrist_flex", "wrist_extend", "wrist_radial_dev", "wrist_ulnar_dev"],
+      "_excluded": [],
+      "_note": "All 4 wrist DOFs retained. FCU (ulnar dev) partially overlaps wrist_flex in neutral, but diverges across pronation/supination -- useful test case for orientation-dependent ambiguity."
+    }
+  },
+
+  "gestures": [
+    "thumb_flex",
+    "thumb_extend",
+    "index_flex",
+    "pinch_thumb_index",
+    "fist_closed",
+    "hand_open",
+    "wrist_flex",
+    "wrist_extend",
+    "wrist_radial_dev",
+    "wrist_ulnar_dev"
+  ]
+}

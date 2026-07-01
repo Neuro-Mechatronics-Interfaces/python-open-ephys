@@ -233,6 +233,7 @@ class OpenEphysLSLStreamer:
         self._source_fs = 0.0
         self._pending_resample_idx = np.empty(0, dtype=np.int64)
         self._pending_resample_rows = None
+        self._next_emitted_ts = None
 
     def _current_sample_cursor_locked(self) -> int:
         """Return the monotonic sample cursor for new-data detection.
@@ -483,6 +484,7 @@ class OpenEphysLSLStreamer:
         self._source_fs = measured_fs if measured_fs > 0 else header_fs
         self._pending_resample_idx = np.empty(0, dtype=np.int64)
         self._pending_resample_rows = None
+        self._next_emitted_ts = None
 
         if self.expected_fs > 0:
             # User explicitly chose a rate – honour it.
@@ -588,6 +590,7 @@ class OpenEphysLSLStreamer:
             cur_idx = self._current_sample_cursor_locked()
             if cur_idx < self._prev_idx:
                 self._prev_idx = cur_idx
+                self._next_emitted_ts = None
                 info["error"] = (
                     "Source sample index reset; resynchronized to continuing playback."
                 )
@@ -642,8 +645,12 @@ class OpenEphysLSLStreamer:
             return info
 
         fs = self.detected_fs if self.detected_fs > 0 else self.expected_fs
-        ts_end = _now()
-        ts = ts_end - (np.arange(n_samples, dtype=np.float64)[::-1] / fs)
+        if self._next_emitted_ts is None:
+            first_ts = _now() - ((n_samples - 1) / fs)
+        else:
+            first_ts = self._next_emitted_ts
+        ts = first_ts + (np.arange(n_samples, dtype=np.float64) / fs)
+        self._next_emitted_ts = float(ts[-1] + (1.0 / fs))
         ts_list = ts.tolist()
 
         # ---- IMU ----

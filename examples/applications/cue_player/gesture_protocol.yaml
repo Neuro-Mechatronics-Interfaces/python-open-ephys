@@ -1,0 +1,63 @@
+# Cue player protocol.
+# Knob-style schema -- see cue_player.py docstring for the explicit-events alternative.
+# All durations are in seconds.
+# To disable a gesture, add a '#' at the start of its line in the gestures list.
+
+ready_s: 1.0
+hold_s: 5.0
+rest_s: 1.0
+intro_pad_s: 2.0
+outro_pad_s: 2.0
+
+calibration_postures: [pronated, neutral, supinated]
+calibration_hold_s: 5.0
+
+# Each wrist orientation re-runs the full gesture list.
+# Markers get a '@<orientation>' suffix (e.g. cue_start:index_flex@supinated:rep_3).
+# Before each block a long READY cue 'posture_<orientation>' prompts the participant
+# to rotate their wrist; posture_setup_s controls its duration.
+gesture_orientations: [pronated, neutral, supinated]
+posture_setup_s: 8.0
+
+reps: 8
+
+# Set randomize_gestures to true to shuffle gesture order independently per
+# orientation block. Add a 'seed' integer for reproducible randomization.
+randomize_gestures: false
+# seed: 42
+
+# ---------------------------------------------------------------------------
+# Active gesture list -- comment out any line to disable that gesture.
+# ---------------------------------------------------------------------------
+gestures:
+  # --- individual finger flex ---
+  - thumb_flex
+  - index_flex
+  # - middle_flex       # excluded: near-indistinguishable from index_flex on surface EMG
+  # - ring_flex
+  # - pinky_flex
+
+  # --- individual finger extend ---
+  - thumb_extend
+  # - index_extend      # excluded: EIP co-activates EDC, clusters near hand_open
+  # - middle_extend     # excluded: pure EDC, indistinguishable from partial hand_open
+  # - ring_extend
+  # - pinky_extend
+
+  # --- thumb opposition ---
+  - pinch_thumb_index
+  # - pinch_thumb_middle  # excluded: FPL+FDS pattern identical across all pinch variants
+  # - pinch_thumb_ring
+  # - pinch_thumb_pinky
+
+  # --- whole hand ---
+  - fist_closed
+  - hand_open
+  # - hook_grip         # excluded: intrinsics don't cross wrist, low orientation-dependency
+  # - lumbrical_grip
+
+  # --- wrist ---
+  - wrist_flex
+  - wrist_extend
+  - wrist_radial_dev
+  - wrist_ulnar_dev
