@@ -8,45 +8,59 @@
 [![Python](https://img.shields.io/pypi/pyversions/python-oephys.svg)](https://pypi.org/project/python-oephys/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-python-open-ephys is a Python toolkit for loading, streaming, processing, and visualizing Open Ephys electrophysiology data. The project combines file I/O, real-time interfaces, signal-processing utilities, and higher-level application examples in one package.
+`python-open-ephys` is a Python toolkit for loading, streaming, processing,
+and visualizing Open Ephys electrophysiology data. It provides file I/O,
+real-time ZMQ and LSL interfaces, EMG signal-processing utilities, and
+standalone examples for analysis and acquisition workflows.
 
-## Highlights
+## Quick links
 
-- Load Open Ephys Binary recordings and normalized NPZ exports.
-- Stream live data from the Open Ephys GUI over ZMQ and LSL.
-- Process EMG and electrophysiology signals with filtering, synchronization, and QC utilities.
-- Run GUI tools for viewing recordings and inspecting real-time streams.
-- Prototype machine-learning workflows on top of the same session format.
+- [Documentation](https://neuro-mechatronics-interfaces.github.io/python-open-ephys/)
+- [Examples](examples/)
+- [API source](src/pyoephys/)
+- [Contributing guide](CONTRIBUTING.md)
+- [Issue tracker](https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys/issues)
+
+## Features
+
+- Load Open Ephys Binary recordings and normalized NumPy exports.
+- Stream data from the Open Ephys GUI over ZMQ and LSL.
+- Filter, synchronize, and quality-check EMG and electrophysiology signals.
+- Inspect recordings with offline and real-time viewer applications.
+- Capture LSL streams to NumPy files and replay Open Ephys recordings over LSL.
+- Build machine-learning workflows on top of the same session data.
 
 ## Installation
 
-Install the latest published release from PyPI:
+### From PyPI
 
 ```bash
-pip install python-oephys
+python -m pip install python-oephys
 ```
 
-The published package currently includes the runtime GUI and ML dependencies in the base install. Install the docs toolchain separately if you need to build the documentation locally:
+The package supports Python 3.10 and newer.
 
-```bash
-pip install "python-oephys[docs]"
-```
-
-Install from source for development:
+### From source
 
 ```bash
 git clone https://github.com/Neuro-Mechatronics-Interfaces/python-open-ephys.git
 cd python-open-ephys
-pip install -e .
+python -m pip install -e .
 ```
 
-Install a pre-release build from TestPyPI when you want to validate an upcoming release candidate:
+### Optional dependency groups
+
+Install the groups explicitly when you need their tooling:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --no-deps python-oephys
+python -m pip install "python-oephys[gui]"   # PyQt5 and visualization tools
+python -m pip install "python-oephys[ml]"    # PyTorch, scikit-learn, joblib
+python -m pip install "python-oephys[docs]"  # Sphinx documentation tools
 ```
 
-## Quick Start
+## Getting started
+
+### Load and filter an Open Ephys recording
 
 ```python
 from pyoephys.io import load_open_ephys_session
@@ -64,37 +78,74 @@ filtered = bandpass_filter(
 )
 ```
 
-Launch the real-time viewer against an Open Ephys ZMQ stream:
+### Connect to a live Open Ephys stream
+
+The real-time viewer connects to the Open Ephys ZMQ Interface plugin:
 
 ```bash
-python -m pyoephys.applications._realtime_viewer --host 127.0.0.1 --channels 0:8
+python -m pyoephys.applications._realtime_viewer \
+  --host 127.0.0.1 \
+  --channels 0:8
 ```
+
+For programmatic interfaces, see `pyoephys.interface.ZMQClient` and
+`pyoephys.interface.LSLClient` in the API documentation.
+
+### Capture or replay LSL data
+
+The package installs two command-line tools:
+
+```bash
+pyoephys-lsl2npz --help
+pyoephys-playback --help
+```
+
+The corresponding examples and LSL utilities are in
+[`examples/interface/lsl/`](examples/interface/lsl/).
 
 ## Examples
 
-The repository includes runnable examples for common workflows:
+- [`examples/read_files/`](examples/read_files/) — inspect metadata and convert recordings.
+- [`examples/interface/`](examples/interface/) — ZMQ, LSL, IMU, and hardware interfaces.
+- [`examples/applications/`](examples/applications/) — standalone viewers and applications.
+- [`examples/applications/cue_player/`](examples/applications/cue_player/) — timed LSL cue markers.
+- [`examples/joint_angle_regression/`](examples/joint_angle_regression/) — standalone EMG session GUI with optional LSL reference streams.
+- [`examples/analysis/`](examples/analysis/) — analysis and quality-control workflows.
+- [`examples/benchmarks/`](examples/benchmarks/) — performance checks.
+- [`examples/visualization/`](examples/visualization/) — offline and live visualizations.
 
-- `examples/read_files/` for inspecting `.oebin` metadata (`example_metadata_oebin.py`) and converting recordings to NPZ / DEMUSE MAT (`example_convert_oebin.py`).
-- `examples/interface/` for ZMQ, LSL, IMU, and hardware integration workflows.
-- `examples/applications/` for standalone viewers, analysis tools, and optional
-  LSL cue/event examples under `applications/cue_player/`.
-- `examples/joint_angle_regression/` for the standalone EMG session GUI and
-  optional LSL reference-stream workflows.
-- `examples/analysis/`, `examples/benchmarks/`, and `examples/visualization/` for downstream analysis and diagnostics.
+All external integrations are optional. This repository does not require a
+separate recording application or another project; examples communicate
+through documented interfaces such as LSL, ZMQ, and files.
+
+## Package structure
+
+```text
+src/pyoephys/
+├── io/          Open Ephys file loading and dataset utilities
+├── interface/   ZMQ, LSL, playback, and device interfaces
+├── processing/  Filtering, synchronization, features, and QC
+├── plotting/    Reusable plotting components
+├── applications/ Viewer and command-line applications
+└── ml/          Optional model and evaluation utilities
+```
 
 ## Documentation
 
-Hosted documentation: https://neuro-mechatronics-interfaces.github.io/python-open-ephys/
+Read the full documentation at:
 
-Build the docs locally with:
+<https://neuro-mechatronics-interfaces.github.io/python-open-ephys/>
+
+Build it locally with:
 
 ```bash
+python -m pip install "python-oephys[docs]"
 python -m sphinx -b html docs/source docs/build/html
 ```
 
 ## Development
 
-Run the test suite:
+Run the test suite from the repository root:
 
 ```bash
 pytest tests/
@@ -104,22 +155,20 @@ Build source and wheel distributions:
 
 ```bash
 python -m build
+python -m twine check dist/*
 ```
 
-## Release Workflow
-
-- Pushes to `main` publish the Sphinx site to GitHub Pages.
-- The `Test Publish to TestPyPI` workflow is available for manual pre-release validation.
-- Publishing a GitHub Release triggers the PyPI publish workflow.
+The manually triggered TestPyPI workflow is defined in
+[`.github/workflows/test_release.yml`](.github/workflows/test_release.yml).
+Published GitHub Releases trigger the PyPI workflow.
 
 ## Contributing
 
-Issues and pull requests are welcome. If you are proposing a new feature,
-include the target workflow, example data format, and any GUI or hardware
-assumptions so the change can be tested cleanly. The repository does not
-require another project; integrations should remain optional examples using
-documented interfaces such as LSL or ZMQ.
+Issues and pull requests are welcome. Please include the target workflow,
+example data format, and any GUI or hardware assumptions so changes can be
+tested cleanly. Keep cross-project integrations optional and document them as
+examples rather than package requirements.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
