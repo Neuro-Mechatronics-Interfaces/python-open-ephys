@@ -536,17 +536,12 @@ class FlowDiagram(QWidget):
         layout.addWidget(self._hspacer(), 1, 9)
         layout.addWidget(self.blocks["features"], 1, 10)
         layout.addWidget(self._hspacer(), 1, 11)
-        layout.addWidget(self.blocks["infer"], 1, 12)
-        layout.addWidget(self._hspacer(), 1, 13)
-        layout.addWidget(self.blocks["compare"], 1, 14)
 
         layout.addWidget(self.blocks["hand"], 2, 0)
         layout.addWidget(self._hspacer(), 2, 1)
         layout.addWidget(self.blocks["target"], 2, 2)
         layout.addWidget(self._hspacer(), 2, 3, 1, 1)
 
-        layout.addWidget(self.blocks["train"], 2, 10)
-        layout.addWidget(self._hspacer(), 2, 11)
         layout.addWidget(self.blocks["saved"], 2, 12)
 
         for col in range(1, 15, 2):
@@ -907,7 +902,6 @@ class SessionConsole(QWidget):
         content_layout.setContentsMargins(6, 6, 6, 6)
         content_layout.setSpacing(8)
 
-        content_layout.addWidget(self._build_flow_panel())
         content_layout.addWidget(self._build_experiment_panel())
 
         top_row = QHBoxLayout()
@@ -923,13 +917,6 @@ class SessionConsole(QWidget):
         mid_row.addWidget(self._build_prompt_panel(), stretch=1)
         mid_row.addWidget(self._build_filter_panel(), stretch=1)
         content_layout.addLayout(mid_row)
-
-        content_layout.addWidget(self._build_train_panel())
-
-        compare_row = QHBoxLayout()
-        compare_row.setSpacing(8)
-        compare_row.addWidget(self._build_compare_panel(), stretch=1)
-        content_layout.addLayout(compare_row)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
