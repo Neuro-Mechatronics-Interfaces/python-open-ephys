@@ -3,7 +3,7 @@ pyoephys.processing._zca
 =========================
 Online ZCA (Zero-phase Component Analysis) whitening for multi-channel EMG.
 
-Ported and extended from MindRove-EMG (nml/processing/zca.py).
+ZCA whitening utilities for electrophysiology data.
 
 ZCA whitening decorrelates channels while preserving the original signal
 orientation as much as possible, improving classifier performance on

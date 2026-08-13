@@ -3,8 +3,8 @@ pyoephys.ml._model_router
 ==========================
 Route inference to orientation-specific classification models.
 
-Inspired by MindRove-EMG (nml/gesture_classifier/multi_model.py) and extended
-to work natively with :class:`~pyoephys.ml.ModelManager`.
+Routes orientation-specific model requests to the available
+:class:`~pyoephys.ml.ModelManager` backends.
 
 Use case — prosthetic / EMG control where the electrode array sits on the
 forearm: muscle geometry changes with wrist rotation, so a single model

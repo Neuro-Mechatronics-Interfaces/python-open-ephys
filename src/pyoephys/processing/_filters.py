@@ -1,5 +1,5 @@
 """
-nml_hand_exo.processing._filters
+pyoephys.processing._filters
 
 Comprehensive EMG signal preprocessing module.
 

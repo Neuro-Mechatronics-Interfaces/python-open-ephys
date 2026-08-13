@@ -345,8 +345,8 @@ class ModelManager:
     ) -> None:
         """Retrain using a pre-loaded model as warm-start, adapting to new user data.
 
-        This implements the "frozen-body / retrained-head" paradigm from
-        MindRove-EMG's ``fine_tune_model``: the existing weights are used as
+        This implements a "frozen-body / retrained-head" paradigm: existing
+        weights are used as
         strong initialisation so only a small amount of new data is needed.
 
         When *freeze_body* is ``True`` only the last linear layer's parameters

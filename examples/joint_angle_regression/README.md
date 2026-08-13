@@ -2,7 +2,7 @@
 
 **Comprehensive GUI for collecting synchronized EMG and joint angle data, training regression models, and live comparison.**
 
-Adapted from the MindRove-EMG `new_session_gui.py` to work with Open Ephys ZMQ streaming.
+The collection GUI is `session_gui.py`.
 
 ## Features
 
@@ -27,7 +27,7 @@ This example demonstrates how to:
 
 ### Hardware
 - Open Ephys acquisition system with EMG amplifier
-- Camera system or hand tracking device (outputting to LSL)
+- Optional camera system or hand tracking device (outputting to LSL)
 
 ### Software
 ```bash
@@ -43,7 +43,7 @@ pip install numpy PyQt5 pylsl
    - Configure your EMG channels (e.g., 8 channels at 5000 Hz)
    - Note the ZMQ port (default: 5556)
 
-2. **Hand Tracking**: Any system that broadcasts joint angles via LSL
+2. **Optional Hand Tracking**: Any system that broadcasts joint angles via LSL
    - Examples: MediaPipe hand tracking, finger goniometers, motion capture
    - Stream type: `JointAngles` or custom name
    - Typical output: 5 angles [MCP, PIP, DIP, Thumb_MCP, Thumb_IP]
@@ -54,13 +54,17 @@ pip install numpy PyQt5 pylsl
 
 ```bash
 cd python-open-ephys/examples/joint_angle_regression
-python new_session_gui.py
+python session_gui.py
 ```
 
 Or on Windows:
 ```batch
 run_gui.bat
 ```
+
+For participant-facing timed gesture prompts, use the standalone cue player in
+`examples/applications/cue_player/cue_player.py`. Use the session GUI when EMG
+recording, optional angles, and synchronized marker capture are the priority.
 
 ### Step 2: Connect to Data Sources
 
@@ -110,15 +114,6 @@ run_gui.bat
 ### Step 4: Train Regression Model
 
 After collecting data, train a regression model to map EMG → joint angles.
-
-**Using Hand-Landmark-Tracker Pipeline** (recommended):
-```bash
-# Navigate to Hand-Landmark-Tracker example
-cd ../../Hand-Landmark-Tracker/examples/Joint_Kinematics_from_EMG_OpenEphys
-
-# The GUI saves data in compatible format - use it directly
-# See that repository's README for full training pipeline
-```
 
 **Using Custom Training Script**:
 ```python
@@ -180,6 +175,43 @@ model.fit(features, angles)
 - **Output Path**: Auto-generated from subject/session or custom
 - **Controls**: Start/stop recording
 - **Status**: Shows recording progress and save confirmation
+
+### Prompted Task Recording
+
+Use **Start Task** for synchronized prompted recordings. The GUI starts its
+recording buffer before publishing the first marker, so any LSL recording client
+can record the same marker stream alongside EMG and optional hand-tracking
+streams.
+Click **Open Cue Window** to show a separate participant-facing display with a
+large current gesture, countdown, trial progress, and explicit pause/complete
+states. Keep the main session window with the operator.
+
+Recommended LSL recording order:
+
+1. Resolve the EMG and `NML_TaskMarkers` streams in your chosen LSL recorder.
+2. Start recording.
+3. Click **Start Task** in the session GUI.
+4. Allow the prompt plan to finish, or use **Pause Task** / **Stop Task**.
+
+When no hand-angle stream is available, the GUI still records EMG windows and
+prompt markers; the saved `angles` array is filled with NaNs until angle input
+is enabled later.
+
+The marker stream uses one string channel with timestamped labels such as:
+
+```text
+session_start
+trial_start|trial=001|gesture=isolated_digits:thumb_flex|duration_s=5.000
+prompt_onset|phase=gesture|trial=001|gesture=isolated_digits:thumb_flex|duration_s=5.000
+prompt_offset|phase=gesture|trial=001|gesture=isolated_digits:thumb_flex
+trial_end|trial=001|gesture=isolated_digits:thumb_flex
+session_complete
+```
+
+Aborted and paused runs emit `session_abort`, `session_pause`, and
+`session_resume`. Saved NPZ files include both the nearest marker label for
+each EMG window and the complete timestamped marker event log under
+`marker_event_times` and `marker_event_labels`.
 
 ## Data Format
 
@@ -280,21 +312,11 @@ pip install numpy zmq
 - Check for clock drift over long recordings (>10 minutes)
 - Verify sampling rates are accurate
 
-## Integration with Hand-Landmark-Tracker
+## Optional interoperability
 
-This example is designed to work seamlessly with the [Hand-Landmark-Tracker](https://github.com/Jshulgach/Hand-Landmark-Tracker) repository:
-
-1. **Collect data** using this GUI (`session_gui.py`)
-2. **Train models** using Hand-Landmark-Tracker's pipeline:
-   ```bash
-   cd Hand-Landmark-Tracker/examples/Joint_Kinematics_from_EMG_OpenEphys
-   python oephys_create_dataset.py  # Creates training dataset
-   cd ../Joint_Kinematics_from_EMG
-   python train_model.py  # Trains PyTorch EMGRegressor
-   ```
-3. **Real-time prediction** with trained model
-
-See [Hand-Landmark-Tracker/examples/Joint_Kinematics_from_EMG_OpenEphys/README.md](https://github.com/Jshulgach/Hand-Landmark-Tracker/tree/main/examples/Joint_Kinematics_from_EMG_OpenEphys) for full pipeline documentation.
+External LSL publishers may provide hand-tracking or other reference data, but
+those applications are not dependencies of this repository. The stream and
+marker tools included here are listed under `examples/`.
 
 ## Example Use Cases
 
@@ -317,7 +339,8 @@ See [Hand-Landmark-Tracker/examples/Joint_Kinematics_from_EMG_OpenEphys/README.m
 
 ```
 joint_angle_regression/
-├── session_gui.py          # Main data collection GUI
+├── session_gui.py          # Standalone data collection GUI
+├── prompts_default.json    # Example prompt sequence
 ├── run_gui.bat             # Windows launcher
 ├── data/                   # Recorded datasets (not tracked)
 ├── models/                 # Trained models (not tracked)

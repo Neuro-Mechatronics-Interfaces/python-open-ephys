@@ -791,7 +791,8 @@ class CuePlayerApp:
         self.status_lbl.pack(side="bottom", pady=4)
 
         # Wait for SPACE before pushing the first marker so the operator can
-        # arm LabRecorder while the participant reads the title screen.
+        # prepare any desired LSL recording client while the participant reads
+        # the title screen. This example does not launch or require a recorder.
         if outlet is not None:
             print(
                 "[cue_player] Outlet is live -- arm your recorder, then press SPACE in the GUI."

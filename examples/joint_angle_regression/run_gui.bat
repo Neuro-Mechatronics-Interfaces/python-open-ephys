@@ -28,4 +28,4 @@ echo.
 echo Press Ctrl+C to cancel, or
 pause
 
-python new_session_gui.py %*
+python session_gui.py %*

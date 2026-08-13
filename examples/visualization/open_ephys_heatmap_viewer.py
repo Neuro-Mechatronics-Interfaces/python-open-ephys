@@ -16,6 +16,7 @@ try:
         QApplication,
         QCheckBox,
         QComboBox,
+        QDoubleSpinBox,
         QGraphicsPathItem,
         QGridLayout,
         QGroupBox,
@@ -92,7 +93,7 @@ QGroupBox::title {
     padding: 0 4px;
 }
 QLabel { color: #c8ccd4; }
-QSpinBox, QComboBox {
+QSpinBox, QDoubleSpinBox, QComboBox {
     background-color: #2a3039;
     border: 1px solid #3a414b;
     border-radius: 3px;
@@ -410,9 +411,11 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
         self.levels = None
         self.last_retry = 0.0
         self.silhouette_item = None
+        self.forearm_overlay_enabled = bool(self.args.forearm_overlay)
         self.selection_item = None
         self.index_grid = None
         self.selected_channel_idx = None
+        self.current_grid = None
 
         self._init_ui()
         self.setStyleSheet(_DARK_STYLE)
@@ -523,13 +526,36 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
         self.auto_scale.setChecked(True)
         hg.addWidget(self.auto_scale, 4, 0, 1, 2)
 
-        self.label_cells = QCheckBox("Show cell labels")
-        self.label_cells.setChecked(self.args.show_labels)
-        hg.addWidget(self.label_cells, 4, 2, 1, 2)
+        hg.addWidget(QLabel("Labels"), 4, 2)
+        self.label_mode = QComboBox()
+        self.label_mode.addItems([
+            "none",
+            "channel numbers",
+            "channel names",
+            "RMS values",
+        ])
+        initial_label_mode = self.args.labels
+        if initial_label_mode is None:
+            initial_label_mode = "RMS values" if self.args.show_labels else "none"
+        self.label_mode.setCurrentText(initial_label_mode)
+        hg.addWidget(self.label_mode, 4, 3)
 
-        self.forearm_overlay = QCheckBox("Forearm silhouette")
-        self.forearm_overlay.setChecked(self.args.forearm_overlay)
-        hg.addWidget(self.forearm_overlay, 5, 0, 1, 2)
+        hg.addWidget(QLabel("Scale min"), 5, 0)
+        self.scale_min_edit = QDoubleSpinBox()
+        self.scale_min_edit.setRange(-1e9, 1e9)
+        self.scale_min_edit.setDecimals(6)
+        self.scale_min_edit.setSingleStep(1.0)
+        self.scale_min_edit.setValue(float(self.args.scale_min))
+        hg.addWidget(self.scale_min_edit, 5, 1)
+
+        hg.addWidget(QLabel("Scale max"), 5, 2)
+        self.scale_max_edit = QDoubleSpinBox()
+        self.scale_max_edit.setRange(-1e9, 1e9)
+        self.scale_max_edit.setDecimals(6)
+        self.scale_max_edit.setSingleStep(1.0)
+        self.scale_max_edit.setValue(float(self.args.scale_max))
+        hg.addWidget(self.scale_max_edit, 5, 3)
+        self._on_auto_scale_changed(self.auto_scale.isChecked())
 
         controls_layout.addWidget(heat_group)
 
@@ -601,6 +627,10 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
         self.update_edit.valueChanged.connect(self._on_update_interval_changed)
+        self.auto_scale.toggled.connect(self._on_auto_scale_changed)
+        self.scale_min_edit.valueChanged.connect(self._on_manual_scale_changed)
+        self.scale_max_edit.valueChanged.connect(self._on_manual_scale_changed)
+        self.label_mode.currentTextChanged.connect(self._on_label_mode_changed)
 
         reminder = QLabel("Ensure Open Ephys is running with the ZMQ plugin enabled.")
         reminder.setStyleSheet("color: #ffaa00; font-size: 11px;")
@@ -628,7 +658,7 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
         self.selection_item = QGraphicsRectItem()
         self.selection_item.setPen(QPen(QColor(240, 245, 250, 230), 0.15))
         self.selection_item.setBrush(QBrush(QColor(255, 255, 255, 0)))
-        self.selection_item.setZValue(3)
+        self.selection_item.setZValue(5)
         self.selection_item.hide()
         self.plot.addItem(self.selection_item)
         self.plot.scene().sigMouseClicked.connect(self._on_plot_clicked)
@@ -637,6 +667,19 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
 
     def _on_update_interval_changed(self, value):
         self.timer.setInterval(max(20, int(value)))
+
+    def _on_auto_scale_changed(self, checked):
+        self.scale_min_edit.setEnabled(not checked)
+        self.scale_max_edit.setEnabled(not checked)
+        self.levels = None
+
+    def _on_manual_scale_changed(self, value):
+        if not self.auto_scale.isChecked():
+            self.levels = None
+
+    def _on_label_mode_changed(self, value):
+        if self.current_grid is not None:
+            self._draw_cell_labels(self.current_grid)
 
     def _build_source(self):
         return OpenEphysHeatmapSource(
@@ -799,7 +842,7 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
 
     def _draw_forearm_silhouette(self, grid, orientation):
         self._clear_silhouette()
-        if not self.forearm_overlay.isChecked():
+        if not self.forearm_overlay_enabled:
             return
         if self.layout_edit.currentText() != "hdemg128_vertical_columns":
             return
@@ -842,7 +885,10 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
 
     def _draw_cell_labels(self, grid):
         self._clear_cell_labels()
-        if not self.label_cells.isChecked():
+        label_mode = self.label_mode.currentText()
+        if label_mode == "none":
+            return
+        if self.index_grid is None:
             return
 
         for row in range(grid.shape[0]):
@@ -850,7 +896,18 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
                 value = grid[row, col]
                 if np.isnan(value):
                     continue
-                text = pg.TextItem(text=f"{value:.1f}", color="#f5f7fa", anchor=(0.5, 0.5))
+                channel_idx = int(self.index_grid[row, col])
+                details = self._channel_details(channel_idx)
+                if details is None:
+                    continue
+                if label_mode == "channel numbers":
+                    label = str(details["channel_number"])
+                elif label_mode == "channel names":
+                    label = str(details["label"])
+                else:
+                    label = f"{value:.1f}"
+                text = pg.TextItem(text=label, color="#f5f7fa", anchor=(0.5, 0.5))
+                text.setZValue(4)
                 text.setPos(col + 0.5, row + 0.5)
                 self.plot.addItem(text)
                 self.text_items.append(text)
@@ -920,6 +977,7 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
         self.levels = None
         self.index_grid = None
         self.selected_channel_idx = None
+        self.current_grid = None
 
     def _set_config_enabled(self, enabled):
         for widget in (
@@ -933,7 +991,6 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
             self.update_edit,
             self.orientation_edit,
             self.layout_edit,
-            self.forearm_overlay,
             self.bandpass_check,
             self.bp_low_edit,
             self.bp_high_edit,
@@ -957,6 +1014,7 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
             orientation = self.orientation_edit.currentText()
             grid = self._make_grid(rms, rows, cols, orientation)
             self.index_grid = self._make_index_grid(rms.size, rows, cols, orientation)
+            self.current_grid = grid
 
             self.status.setText("Streaming")
             self.status.setStyleSheet("color: #44ff44; font-weight: bold; font-size: 14px;")
@@ -966,8 +1024,22 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
                 return
 
             if self.auto_scale.isChecked() or self.levels is None:
-                lo = float(np.nanpercentile(finite, 5))
-                hi = float(np.nanpercentile(finite, 95))
+                if self.auto_scale.isChecked():
+                    lo = float(np.nanpercentile(finite, 5))
+                    hi = float(np.nanpercentile(finite, 95))
+                    if hi <= lo:
+                        hi = lo + 1e-6
+                    self.scale_min_edit.blockSignals(True)
+                    self.scale_max_edit.blockSignals(True)
+                    self.scale_min_edit.setValue(lo)
+                    self.scale_max_edit.setValue(hi)
+                    self.scale_min_edit.blockSignals(False)
+                    self.scale_max_edit.blockSignals(False)
+                else:
+                    lo = float(self.scale_min_edit.value())
+                    hi = float(self.scale_max_edit.value())
+                    if hi <= lo:
+                        hi = lo + 1e-6
                 if hi <= lo:
                     hi = lo + 1e-6
                 self.levels = (lo, hi)
@@ -993,7 +1065,7 @@ class HeatmapWindow(_QT_MAIN_WINDOW_BASE):
                 f"RMS min/max/mean: {float(np.nanmin(finite)):.3f} / {float(np.nanmax(finite)):.3f} / {float(np.nanmean(finite)):.3f}"
             )
             self.scale_info.setText(
-                f"Color scale: {self.levels[0]:.3f} to {self.levels[1]:.3f} | BP={self.bandpass_check.isChecked()} {self.bp_low_edit.value()}-{self.bp_high_edit.value()} Hz | Notch={self.notch_check.isChecked()} @{self.notch_freq_edit.value()} Hz"
+                f"Color scale: {self.levels[0]:.3f} to {self.levels[1]:.3f} ({'auto' if self.auto_scale.isChecked() else 'manual'}) | BP={self.bandpass_check.isChecked()} {self.bp_low_edit.value()}-{self.bp_high_edit.value()} Hz | Notch={self.notch_check.isChecked()} @{self.notch_freq_edit.value()} Hz"
             )
         except NotReadyError:
             self.status.setText("Waiting for data stream...")
@@ -1047,8 +1119,16 @@ def build_arg_parser():
     parser.add_argument("--notch-freq", type=float, default=60.0, help="Notch frequency in Hz")
     parser.add_argument("--no-notch", dest="notch", action="store_false", help="Disable notch filtering")
     parser.add_argument("--show-labels", action="store_true", help="Overlay RMS values on each cell")
-    parser.add_argument("--no-forearm-overlay", dest="forearm_overlay", action="store_false", help="Disable the stylized forearm/hand silhouette overlay")
-    parser.set_defaults(bandpass=True, notch=True, forearm_overlay=True)
+    parser.add_argument(
+        "--labels",
+        choices=["none", "channel numbers", "channel names", "RMS values"],
+        default=None,
+        help="Cell label overlay mode",
+    )
+    parser.add_argument("--scale-min", type=float, default=0.0, help="Manual color scale minimum")
+    parser.add_argument("--scale-max", type=float, default=1.0, help="Manual color scale maximum")
+    parser.add_argument("--forearm-overlay", action="store_true", help="Enable the stylized forearm/hand silhouette overlay")
+    parser.set_defaults(bandpass=True, notch=True, forearm_overlay=False)
     return parser
 
 

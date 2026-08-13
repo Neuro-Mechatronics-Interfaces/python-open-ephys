@@ -25,6 +25,10 @@ try:
     HAS_QT = True
 except Exception:
     HAS_QT = False
+    # Keep the module importable for headless streamer tests.  The launcher
+    # checks HAS_QT before constructing the GUI, so this fallback is never
+    # used for an actual window.
+    QMainWindow = object
 
 try:
     from pyoephys.interface import ZMQClient

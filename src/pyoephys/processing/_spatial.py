@@ -3,7 +3,7 @@ pyoephys.processing._spatial
 ==============================
 Spatial referencing for circular multi-electrode EMG arrays.
 
-Ported and extended from MindRove-EMG (nml/processing/spatial.py).
+Spatial preprocessing utilities for electrophysiology data.
 
 Modes
 -----

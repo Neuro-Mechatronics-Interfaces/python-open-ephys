@@ -76,7 +76,10 @@ The repository includes runnable examples for common workflows:
 
 - `examples/read_files/` for inspecting `.oebin` metadata (`example_metadata_oebin.py`) and converting recordings to NPZ / DEMUSE MAT (`example_convert_oebin.py`).
 - `examples/interface/` for ZMQ, LSL, IMU, and hardware integration workflows.
-- `examples/applications/` for standalone viewers and analysis tools.
+- `examples/applications/` for standalone viewers, analysis tools, and optional
+  LSL cue/event examples under `applications/cue_player/`.
+- `examples/joint_angle_regression/` for the standalone EMG session GUI and
+  optional LSL reference-stream workflows.
 - `examples/analysis/`, `examples/benchmarks/`, and `examples/visualization/` for downstream analysis and diagnostics.
 
 ## Documentation
@@ -111,7 +114,11 @@ python -m build
 
 ## Contributing
 
-Issues and pull requests are welcome. If you are proposing a new feature, include the target workflow, example data format, and any GUI or hardware assumptions so the change can be tested cleanly.
+Issues and pull requests are welcome. If you are proposing a new feature,
+include the target workflow, example data format, and any GUI or hardware
+assumptions so the change can be tested cleanly. The repository does not
+require another project; integrations should remain optional examples using
+documented interfaces such as LSL or ZMQ.
 
 ## License
 

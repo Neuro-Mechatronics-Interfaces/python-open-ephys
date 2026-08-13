@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMainWindow,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -631,6 +632,138 @@ class FlowDiagram(QWidget):
         return rendered
 
 
+class PromptCueWindow(QMainWindow):
+    """Minimal, high-visibility participant cue display.
+
+    The operator keeps the session console; the participant sees only the
+    current cue, timing, and progress.  This separation reduces choice and
+    cognitive load during a task while keeping the experiment controls nearby.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Task Cue")
+        self.setMinimumSize(720, 460)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        self._deadline = 0.0
+        self._state = "READY"
+
+        root = QWidget()
+        self.setCentralWidget(root)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(36, 28, 36, 28)
+        layout.setSpacing(14)
+
+        self.state_label = QLabel("READY")
+        self.state_label.setAlignment(Qt.AlignCenter)
+        self.state_label.setObjectName("cueState")
+        layout.addWidget(self.state_label)
+
+        self.prompt_label = QLabel("Waiting for task")
+        self.prompt_label.setAlignment(Qt.AlignCenter)
+        self.prompt_label.setWordWrap(True)
+        self.prompt_label.setObjectName("cuePrompt")
+        layout.addWidget(self.prompt_label, stretch=1)
+
+        self.detail_label = QLabel("Open the cue window and start the task")
+        self.detail_label.setAlignment(Qt.AlignCenter)
+        self.detail_label.setObjectName("cueDetail")
+        layout.addWidget(self.detail_label)
+
+        self.countdown_label = QLabel("--")
+        self.countdown_label.setAlignment(Qt.AlignCenter)
+        self.countdown_label.setObjectName("cueCountdown")
+        layout.addWidget(self.countdown_label)
+
+        self.progress_label = QLabel("Step 0 / 0")
+        self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setObjectName("cueProgress")
+        layout.addWidget(self.progress_label)
+
+        self.setStyleSheet(
+            """
+            QMainWindow, QWidget { background: #151a20; color: #f3f5f7; }
+            QLabel#cueState { color: #8fa8bd; font-size: 20px; font-weight: bold; }
+            QLabel#cuePrompt { color: #ffffff; font-size: 58px; font-weight: bold; }
+            QLabel#cueDetail { color: #b7c0ca; font-size: 22px; }
+            QLabel#cueCountdown { color: #65c18c; font-size: 54px; font-weight: bold; }
+            QLabel#cueProgress { color: #8fa8bd; font-size: 18px; }
+            """
+        )
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update_countdown)
+        self.timer.start(100)
+
+    def show_prompt(self, item, deadline, index, total):
+        label = str(item.get("label", "")).strip()
+        phase = item.get("phase", "gesture")
+        trial_id = item.get("trial_id")
+        if phase == "rest":
+            prompt = "REST"
+            detail = "Relax your hand"
+            color = "#8fa8bd"
+        else:
+            category, _, gesture = label.partition(":")
+            prompt = (gesture or category or label).replace("_", " ").upper()
+            detail = category.replace("_", " ").title() if gesture else "Follow the cue"
+            color = "#65c18c"
+
+        self._state = "ACTIVE"
+        self._deadline = float(deadline)
+        self.state_label.setText("ACTIVE")
+        self.state_label.setStyleSheet(
+            f"color: {color}; font-size: 20px; font-weight: bold;"
+        )
+        self.prompt_label.setText(prompt)
+        self.detail_label.setText(
+            f"{detail}  •  Trial {trial_id:03d}" if trial_id else detail
+        )
+        self.progress_label.setText(f"Step {index + 1} / {total}")
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._update_countdown()
+
+    def set_paused(self, paused, deadline=None):
+        if paused:
+            self._state = "PAUSED"
+            self.state_label.setText("PAUSED")
+            self.state_label.setStyleSheet(
+                "color: #e0b45f; font-size: 20px; font-weight: bold;"
+            )
+            self.countdown_label.setText("PAUSED")
+        else:
+            self._state = "ACTIVE"
+            self._deadline = float(deadline or self._deadline)
+            self.state_label.setText("ACTIVE")
+            self.state_label.setStyleSheet(
+                "color: #65c18c; font-size: 20px; font-weight: bold;"
+            )
+            self._update_countdown()
+
+    def set_finished(self, aborted=False):
+        self._state = "ABORTED" if aborted else "COMPLETE"
+        self._deadline = 0.0
+        self.state_label.setText(self._state)
+        self.state_label.setStyleSheet(
+            "color: #e07a7a; font-size: 20px; font-weight: bold;"
+            if aborted
+            else "color: #65c18c; font-size: 20px; font-weight: bold;"
+        )
+        self.prompt_label.setText("TASK STOPPED" if aborted else "TASK COMPLETE")
+        self.detail_label.setText(
+            "You may close this window or wait for the next task."
+        )
+        self.countdown_label.setText("--")
+
+    def _update_countdown(self):
+        if self._state != "ACTIVE" or not self._deadline:
+            return
+        remaining = max(0.0, self._deadline - _clock())
+        self.countdown_label.setText(f"{remaining:.1f} s")
+
+
 class SessionConsole(QWidget):
     def __init__(self):
         super().__init__()
@@ -650,6 +783,11 @@ class SessionConsole(QWidget):
         self.prompt_idx = 0
         self.prompt_end_time = 0.0
         self.prompt_outlet = None
+        self.prompt_current_item = None
+        self.prompt_paused_at = 0.0
+        self.task_paused = False
+        self.task_active = False
+        self.prompt_window = PromptCueWindow(self)
         self.feat_last_epoch = 0
         self.feat_max_epochs = 0
         self.feat_early_stopped = False
@@ -691,6 +829,7 @@ class SessionConsole(QWidget):
         self.record_hand_idx = 0
         self.record_out_path = ""
         self.record_angle_stream = ""
+        self.record_angles_enabled = False
         self.record_marker_stream = ""
         self.record_plan_file = ""
         self.record_plan_json = ""
@@ -701,6 +840,8 @@ class SessionConsole(QWidget):
         self.record_angle_targets = []
         self.record_window_ts = []
         self.record_marker_labels = []
+        self.record_marker_event_times = []
+        self.record_marker_event_labels = []
         self.record_imu_windows = []
         self.record_skip_no_angle = 0
         self.record_skip_nan_angle = 0
@@ -933,11 +1074,15 @@ class SessionConsole(QWidget):
 
         task_row = QHBoxLayout()
         self.task_start_btn = QPushButton("Start Task")
+        self.task_pause_btn = QPushButton("Pause Task")
         self.task_stop_btn = QPushButton("Stop Task")
+        self.task_pause_btn.setEnabled(False)
         self.task_stop_btn.setEnabled(False)
         self.task_start_btn.clicked.connect(self._start_task)
+        self.task_pause_btn.clicked.connect(self._toggle_task_pause)
         self.task_stop_btn.clicked.connect(self._stop_task)
         task_row.addWidget(self.task_start_btn)
+        task_row.addWidget(self.task_pause_btn)
         task_row.addWidget(self.task_stop_btn)
         layout.addLayout(task_row)
         return group
@@ -1102,9 +1247,7 @@ class SessionConsole(QWidget):
         layout = QVBoxLayout(group)
 
         self.angle_stream_name = QLineEdit("StereoHandTracker_Angles")
-        self.marker_stream_name = QLineEdit(
-            "StereoHandTracker_Landmarks"
-        )  # Receives hand landmarks from mocap broadcaster
+        self.marker_stream_name = QLineEdit("NML_TaskMarkers")
         self.angle_stream_name.setMinimumWidth(120)
         self.angle_stream_name.setMaximumWidth(180)
         self.marker_stream_name.setMinimumWidth(120)
@@ -1120,7 +1263,7 @@ class SessionConsole(QWidget):
         layout.addWidget(self.angle_status)
 
         marker_row = QHBoxLayout()
-        marker_row.addWidget(QLabel("Markers"))
+        marker_row.addWidget(QLabel("Prompt markers"))
         marker_row.addWidget(self.marker_stream_name, stretch=1)
         layout.addLayout(marker_row)
 
@@ -1161,6 +1304,9 @@ class SessionConsole(QWidget):
         btn_load = QPushButton("Load")
         btn_load.clicked.connect(self._load_prompt_preview)
         prompt_row.addWidget(btn_load)
+        btn_cue = QPushButton("Open Cue Window")
+        btn_cue.clicked.connect(self._show_prompt_window)
+        prompt_row.addWidget(btn_cue)
 
         self.prompt_preview = QTextEdit()
         self.prompt_preview.setReadOnly(True)
@@ -2348,21 +2494,10 @@ class SessionConsole(QWidget):
         if self.proc_prompts:
             return
         plan = self.prompt_plan.text().strip()
-        script_path = Path(__file__).parent / "task_prompter_lsl.py"
-        if script_path.exists():
-            self.proc_prompts = self._run_script(
-                "task_prompter_lsl.py", ["--plan_file", plan], "prompts"
-            )
-            btn_start.setEnabled(False)
-            btn_stop.setEnabled(True)
-            if self.prompts_led:
-                self.prompts_led.setStyleSheet("color: #44ff44; font-size: 16px;")
-            self._append_log(f"[prompts] Using plan: {plan}")
-            return
-
         if not self._load_prompt_plan_data(plan):
             self._append_log(f"[prompts] Failed to load plan: {plan}")
             return
+        self._emit_marker(f"prompt_sequence_start|plan={Path(plan).name}")
         self._start_prompt_sequence()
         btn_start.setEnabled(False)
         btn_stop.setEnabled(True)
@@ -2377,13 +2512,24 @@ class SessionConsole(QWidget):
             if not isinstance(data, list):
                 raise ValueError("Prompt plan must be a list.")
             self.prompt_plan_data = []
+            trial_id = 0
             for item in data:
                 if not isinstance(item, dict):
                     continue
                 label = str(item.get("label", "")).strip()
                 duration = float(item.get("duration", 0))
                 if label and duration > 0:
-                    self.prompt_plan_data.append({"label": label, "duration": duration})
+                    is_rest = label.lower() == "rest"
+                    if not is_rest:
+                        trial_id += 1
+                    self.prompt_plan_data.append(
+                        {
+                            "label": label,
+                            "duration": duration,
+                            "phase": "rest" if is_rest else "gesture",
+                            "trial_id": trial_id if not is_rest else None,
+                        }
+                    )
             return bool(self.prompt_plan_data)
         except Exception as exc:
             self._append_log(f"[prompts] Plan parse error: {exc}")
@@ -2398,15 +2544,44 @@ class SessionConsole(QWidget):
             self.prompt_timer.timeout.connect(self._advance_prompt_sequence)
         self.prompt_idx = 0
         self.prompt_end_time = 0.0
+        self.prompt_current_item = None
+        self.prompt_paused_at = 0.0
+        self.task_paused = False
+        self._ensure_prompt_outlet()
+        self._emit_prompt()
+        self.prompt_timer.start(200)
+
+    def _ensure_prompt_outlet(self):
+        if self.prompt_outlet is not None:
+            return
         try:
             from lsl_utils import HAS_LSL, make_marker_outlet
 
-            if HAS_LSL and self.prompt_outlet is None:
-                self.prompt_outlet = make_marker_outlet()
-        except Exception:
+            if HAS_LSL:
+                stream_name = self.marker_stream_name.text().strip() or "NML_TaskMarkers"
+                self.prompt_outlet = make_marker_outlet(
+                    stream_name=stream_name,
+                    source_id="oephys_task_prompts",
+                )
+        except Exception as exc:
             self.prompt_outlet = None
-        self._emit_prompt()
-        self.prompt_timer.start(200)
+            self._append_log(f"[markers] Unable to create marker outlet: {exc}")
+
+    def _emit_marker(self, label, timestamp=None):
+        """Publish and retain a timestamped marker for the current session."""
+        if timestamp is None:
+            timestamp = _clock()
+        if self.prompt_outlet is not None:
+            try:
+                self.prompt_outlet.push_sample([str(label)], timestamp=timestamp)
+            except TypeError:
+                self.prompt_outlet.push_sample([str(label)], timestamp)
+            except Exception as exc:
+                self._append_log(f"[markers] Send failed: {exc}")
+        if self.recording_active:
+            self.record_marker_event_times.append(float(timestamp))
+            self.record_marker_event_labels.append(str(label))
+        self._append_log(f"[marker] {label}")
 
     def _emit_prompt(self):
         if self.prompt_idx >= len(self.prompt_plan_data):
@@ -2416,32 +2591,72 @@ class SessionConsole(QWidget):
         label = item["label"]
         duration = float(item["duration"])
         self.prompt_end_time = _clock() + duration
+        self.prompt_current_item = item
+        trial_id = item.get("trial_id")
+        if item.get("phase") == "rest":
+            marker = f"rest_onset|duration_s={duration:.3f}"
+        else:
+            marker = (
+                f"trial_start|trial={trial_id:03d}|gesture={label}|duration_s={duration:.3f}"
+            )
+        self._emit_marker(marker)
+        self._emit_marker(
+            f"prompt_onset|phase={item.get('phase')}|trial={trial_id or 0:03d}"
+            f"|gesture={label}|duration_s={duration:.3f}"
+        )
+        self.prompt_window.show_prompt(
+            item,
+            self.prompt_end_time,
+            self.prompt_idx,
+            len(self.prompt_plan_data),
+        )
         self._append_log(f"[prompts] [PROMPT] {label} ({duration:.1f}s)")
-        if self.prompt_outlet is not None:
-            try:
-                self.prompt_outlet.push_sample([label])
-            except Exception:
-                pass
+
+    def _finish_current_prompt(self):
+        item = self.prompt_current_item
+        if item is None:
+            return
+        label = item["label"]
+        trial_id = item.get("trial_id")
+        self._emit_marker(
+            f"prompt_offset|phase={item.get('phase')}|trial={trial_id or 0:03d}"
+            f"|gesture={label}"
+        )
+        if item.get("phase") != "rest":
+            self._emit_marker(f"trial_end|trial={trial_id:03d}|gesture={label}")
+        self.prompt_current_item = None
 
     def _advance_prompt_sequence(self):
         if not self.prompt_plan_data:
             self._stop_prompt_sequence()
             return
         if _clock() >= self.prompt_end_time:
+            self._finish_current_prompt()
             self.prompt_idx += 1
             if self.prompt_idx >= len(self.prompt_plan_data):
+                self._emit_marker("session_complete")
                 self._append_log("[prompts] process exited")
                 self._stop_prompt_sequence()
             else:
                 self._emit_prompt()
 
-    def _stop_prompt_sequence(self):
+    def _stop_prompt_sequence(self, aborted=False):
         if self.prompt_timer:
             self.prompt_timer.stop()
         self.prompt_timer = None
+        self._finish_current_prompt()
+        if aborted:
+            self._emit_marker("session_abort")
         self.prompt_plan_data = []
         self.prompt_idx = 0
         self.prompt_end_time = 0.0
+        self.prompt_paused_at = 0.0
+        self.task_paused = False
+        self.task_active = False
+        if hasattr(self, "task_pause_btn"):
+            self.task_pause_btn.setText("Pause Task")
+            self.task_pause_btn.setEnabled(False)
+        self.prompt_window.set_finished(aborted=aborted)
         self.prompt_outlet = None
         if self.prompts_led:
             self.prompts_led.setStyleSheet("color: #ff6666; font-size: 16px;")
@@ -2455,52 +2670,92 @@ class SessionConsole(QWidget):
             self.task_stop_btn.setEnabled(False)
 
     def _start_task(self):
+        if self.recording_active or self.prompt_timer is not None:
+            self._append_log("[task] Stop the current recording/task before starting a new one.")
+            return
         if self.arm_button and not self.arm_button.isChecked():
             self.arm_button.setChecked(True)
             self._append_log("[task] Auto-armed recording.")
 
         ready = (
             self.monitor.emg_connected
-            and ("Connected" in self.angle_status.text())
             and self.arm_button.isChecked()
         )
         if not ready:
             self._append_log(
-                "[task] Not ready: need EMG LSL + Angles OK + Arm Recording."
+                "[task] Not ready: need EMG LSL + Arm Recording."
             )
             return
 
-        if self.prompts_start_btn and self.prompts_stop_btn:
-            self._start_prompts(self.prompts_start_btn, self.prompts_stop_btn)
+        plan = self.prompt_plan.text().strip()
+        if not self._load_prompt_plan_data(plan):
+            self._append_log(f"[task] Invalid prompt plan: {plan}")
+            return
+
         if self.record_start_btn and self.record_stop_btn:
             self._start_record(self.record_start_btn, self.record_stop_btn)
+
+        # The recording must be active before the first lifecycle marker or
+        # prompt is emitted. Any LSL recording client can capture session_start
+        # and subsequent markers alongside EMG (and angles when available).
+        self._ensure_prompt_outlet()
+        self._emit_marker("session_start")
+        if self.prompts_start_btn and self.prompts_stop_btn:
+            self._start_prompts(self.prompts_start_btn, self.prompts_stop_btn)
 
         if self.task_start_btn and self.task_stop_btn:
             self.task_start_btn.setEnabled(False)
             self.task_stop_btn.setEnabled(True)
+        self.task_active = True
+        self.task_pause_btn.setEnabled(True)
+
+    def _toggle_task_pause(self):
+        if not self.task_active or self.prompt_timer is None:
+            return
+        if not self.task_paused:
+            self.task_paused = True
+            self.prompt_paused_at = _clock()
+            self.prompt_timer.stop()
+            self._emit_marker("session_pause")
+            self.prompt_window.set_paused(True)
+            self.task_pause_btn.setText("Resume Task")
+            self._append_log("[task] Paused")
+        else:
+            paused_for = max(0.0, _clock() - self.prompt_paused_at)
+            self.prompt_end_time += paused_for
+            self.task_paused = False
+            self.prompt_paused_at = 0.0
+            self.prompt_timer.start(200)
+            self._emit_marker("session_resume")
+            self.prompt_window.set_paused(False, self.prompt_end_time)
+            self.task_pause_btn.setText("Pause Task")
+            self._append_log("[task] Resumed")
 
     def _stop_task(self):
         if self.proc_prompts and self.prompts_start_btn and self.prompts_stop_btn:
             self._stop_process("prompts", self.prompts_start_btn, self.prompts_stop_btn)
         elif self.prompt_timer:
-            self._stop_prompt_sequence()
+            self._stop_prompt_sequence(aborted=True)
+        elif self.task_active:
+            self._emit_marker("session_abort")
         if self.recording_active and self.record_start_btn and self.record_stop_btn:
             self._stop_process("record", self.record_start_btn, self.record_stop_btn)
 
         if self.task_start_btn and self.task_stop_btn:
             self.task_start_btn.setEnabled(True)
             self.task_stop_btn.setEnabled(False)
+        if hasattr(self, "task_pause_btn"):
+            self.task_pause_btn.setEnabled(False)
 
     def _start_record(self, btn_start, btn_stop):
         if self.recording_active:
             return
         if not (
             self.monitor.emg_connected
-            and "Connected" in self.angle_status.text()
             and self.arm_button.isChecked()
         ):
             self._append_log(
-                "[WARN] Not ready: need EMG LSL, Angles OK, and Arm Recording enabled."
+                "[WARN] Not ready: need EMG LSL and Arm Recording enabled."
             )
             return
         if get_target_keys:
@@ -2528,6 +2783,11 @@ class SessionConsole(QWidget):
         self.record_hand_idx = 0 if self.record_hand.currentIndex() == 0 else 1
         self.record_out_path = out_path
         self.record_angle_stream = self.angle_stream_name.text().strip()
+        self.record_angles_enabled = "Connected" in self.angle_status.text()
+        if not self.record_angles_enabled:
+            self._append_log(
+                "[record] Hand angles unavailable; recording EMG with NaN angle targets."
+            )
         self.record_marker_stream = self.marker_stream_name.text().strip()
         self.record_plan_file = self.prompt_plan.text().strip()
         self.record_plan_json = ""
@@ -2557,6 +2817,8 @@ class SessionConsole(QWidget):
         self.record_angle_targets = []
         self.record_window_ts = []
         self.record_marker_labels = []
+        self.record_marker_event_times = []
+        self.record_marker_event_labels = []
         self.record_imu_windows = []
         self.record_skip_no_angle = 0
         self.record_skip_nan_angle = 0
@@ -3271,6 +3533,11 @@ class SessionConsole(QWidget):
             if target is self.prompt_plan:
                 self._load_prompt_preview()
 
+    def _show_prompt_window(self):
+        self.prompt_window.show()
+        self.prompt_window.raise_()
+        self.prompt_window.activateWindow()
+
     @staticmethod
     def _next_session_path():
         """Return the next available session_NNN.npz path."""
@@ -3439,7 +3706,11 @@ class SessionConsole(QWidget):
 
             self._update_angle_match_status(t_center, window_ready=True)
             angle_sample = self._nearest_angle_sample(t_center)
-            if angle_sample is not None:
+            if angle_sample is not None or not self.record_angles_enabled:
+                if angle_sample is None:
+                    angle_sample = np.full(
+                        len(self.target_keys or ANGLE_KEYS), np.nan, dtype=np.float32
+                    )
                 self.record_emg_windows.append(window.T[..., None])
                 self.record_angle_targets.append(angle_sample)
                 self.record_window_ts.append(t_center)
@@ -3714,6 +3985,13 @@ class SessionConsole(QWidget):
                 angles=np.asarray(self.record_angle_targets, dtype=np.float32),
                 timestamps=np.asarray(self.record_window_ts, dtype=np.float64),
                 markers=np.asarray(self.record_marker_labels, dtype=object),
+                marker_event_times=np.asarray(
+                    self.record_marker_event_times, dtype=np.float64
+                ),
+                marker_event_labels=np.asarray(
+                    self.record_marker_event_labels, dtype=object
+                ),
+                marker_protocol="oephys_task_markers_v1",
                 imu=np.asarray(self.record_imu_windows, dtype=np.float32),
                 imu_channels=np.asarray(
                     ["ax", "ay", "az", "gx", "gy", "gz", "mx", "my", "mz"], dtype=object
@@ -3860,6 +4138,7 @@ class SessionConsole(QWidget):
 
     def closeEvent(self, event):
         self._closing = True
+        self.prompt_window.close()
         if self.recording_active:
             self._finish_record(save=True)
         if self.compare_active:
