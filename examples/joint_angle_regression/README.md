@@ -2,7 +2,10 @@
 
 **Comprehensive GUI for collecting synchronized EMG and joint angle data, training regression models, and live comparison.**
 
-The collection GUI is `session_gui.py`.
+The collection GUI is `session_gui.py`. It provides EMG/LSL capture, optional
+prompted tasks, marker publishing, and saved NumPy session files. Model
+training scripts are intentionally not bundled; use the saved data with the
+training workflow of your choice.
 
 ## Features
 
@@ -278,8 +281,8 @@ Both EMG and angles use **LSL timestamps** (`pylsl.local_clock()`), enabling pre
 - Validate with held-out test set
 
 ### 4. Real-time Prediction
-- Use trained model with live ZMQ stream
-- See `python-open-ephys/examples/gesture_classifier/3_predict_realtime.py` for template
+- Use a separately supplied model-training and inference workflow with the
+  saved session files. The GUI does not assume a particular model framework.
 
 ## Troubleshooting
 

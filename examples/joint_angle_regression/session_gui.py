@@ -2834,6 +2834,10 @@ class SessionConsole(QWidget):
         if hasattr(self, "train_use_imu"):
             args += ["--use_imu", "on" if self.train_use_imu.isChecked() else "off"]
         self.proc_train = self._run_script("train_regressor.py", args, "train")
+        if self.proc_train is None:
+            btn_start.setEnabled(True)
+            btn_stop.setEnabled(False)
+            return
         self._append_log("[train] Stop criteria: max_iter or solver convergence.")
         btn_start.setEnabled(False)
         btn_stop.setEnabled(True)
@@ -3067,6 +3071,10 @@ class SessionConsole(QWidget):
         if side:
             args.extend(["--side", side])
         self.proc_feat = self._run_script("train_feature_extractor.py", args, "feat")
+        if self.proc_feat is None:
+            btn_start.setEnabled(True)
+            btn_stop.setEnabled(False)
+            return
         self.feat_last_epoch = 0
         self.feat_max_epochs = max_epochs
         self.feat_early_stopped = False
@@ -3456,12 +3464,18 @@ class SessionConsole(QWidget):
                 pass
 
     def _run_script(self, script_name, args, tag):
-        script_path = str(Path(__file__).parent / script_name)
+        script_path = Path(__file__).parent / script_name
+        if not script_path.exists():
+            self._append_log(
+                f"[{tag}] Optional script is not included in this example: "
+                f"{script_name}. Supply your own model-training integration."
+            )
+            return None
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.MergedChannels)
         proc.readyReadStandardOutput.connect(lambda: self._on_proc_output(proc, tag))
         proc.finished.connect(lambda *_: self._on_proc_finished(tag))
-        proc.start(sys.executable, ["-u", script_path] + args)
+        proc.start(sys.executable, ["-u", str(script_path)] + args)
         return proc
 
     def _pick_file(self, target, title):
