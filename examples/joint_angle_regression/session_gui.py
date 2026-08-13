@@ -33,11 +33,6 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-# Ensure repo root on path for nml imports when running from examples/
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 # Hardware/device streaming is handled by external LSL streamer scripts.
 
 # Feature extractors are imported lazily to avoid hard dependency issues at GUI start.
@@ -879,41 +874,13 @@ class SessionConsole(QWidget):
         self.compare_joints = list(self.target_keys)
         self.compare_joints_idx = []
 
-        # Optional EMG filters (load directly to avoid heavy imports at GUI startup)
-        try:
-            filters_path = (
-                Path(__file__).resolve().parents[2]
-                / "nml"
-                / "gesture_classifier"
-                / "filters.py"
-            )
-            if filters_path.exists():
-                import importlib.util
-
-                spec = importlib.util.spec_from_file_location(
-                    "nml_gesture_filters", str(filters_path)
-                )
-                filters_mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(filters_mod)
-                self._filter_class = getattr(filters_mod, "BiquadMultiChan", None)
-                self._filter_types = getattr(filters_mod, "FilterTypes", None)
-            else:
-                self._filter_class = None
-                self._filter_types = None
-            if self._filter_class is None or self._filter_types is None:
-                raise RuntimeError("Filter classes not available.")
-            self.filter_hp_freq = 4.5
-            self.filter_hp_q = 0.5
-            self.filter_notch_freq = 50.0
-            self.filter_notch_q = 4.0
-            self.filter_lp_freq = 100.0
-            self.filter_lp_q = 0.5
-            self.record_filters = self._build_filters()
-        except Exception as exc:
-            self._filter_class = None
-            self._filter_types = None
-            self.record_filters = None
-            self.filter_import_error = str(exc)
+        # Filtering is intentionally disabled in this example until a local,
+        # package-owned streaming filter is selected. Recording raw EMG keeps
+        # the example independent of external model repositories.
+        self._filter_class = None
+        self._filter_types = None
+        self.record_filters = None
+        self.filter_import_error = "No built-in streaming filter configured."
 
         self.flow_blocks = {}
         self._init_ui()
@@ -929,12 +896,6 @@ class SessionConsole(QWidget):
         local_path = Path(__file__).parent / "models" / "pretrained_transformer.h5"
         if local_path.exists():
             return local_path
-        repo_root = Path(__file__).resolve().parents[3]
-        naviflame_path = (
-            repo_root / "NaviFlame" / "naviflame" / "models" / "og_fine_tune.h5"
-        )
-        if naviflame_path.exists():
-            return naviflame_path
         return local_path
 
     def _init_ui(self):
@@ -1247,7 +1208,7 @@ class SessionConsole(QWidget):
         layout = QVBoxLayout(group)
 
         self.angle_stream_name = QLineEdit("StereoHandTracker_Angles")
-        self.marker_stream_name = QLineEdit("NML_TaskMarkers")
+        self.marker_stream_name = QLineEdit("Pyoephys_TaskMarkers")
         self.angle_stream_name.setMinimumWidth(120)
         self.angle_stream_name.setMaximumWidth(180)
         self.marker_stream_name.setMinimumWidth(120)
@@ -1918,7 +1879,7 @@ class SessionConsole(QWidget):
         layout.setSpacing(6)
 
         if self._filter_class is None:
-            msg = "Filters unavailable (missing nml.gesture_classifier.filters)"
+            msg = "Optional recording filters are not configured; raw EMG will be saved."
             if hasattr(self, "filter_import_error"):
                 msg += f": {self.filter_import_error}"
             layout.addWidget(QLabel(msg))
@@ -2558,7 +2519,7 @@ class SessionConsole(QWidget):
             from lsl_utils import HAS_LSL, make_marker_outlet
 
             if HAS_LSL:
-                stream_name = self.marker_stream_name.text().strip() or "NML_TaskMarkers"
+                stream_name = self.marker_stream_name.text().strip() or "Pyoephys_TaskMarkers"
                 self.prompt_outlet = make_marker_outlet(
                     stream_name=stream_name,
                     source_id="oephys_task_prompts",
@@ -3354,33 +3315,10 @@ class SessionConsole(QWidget):
         global KerasFeatureExtractor, PyTorchFeatureExtractor
         if KerasFeatureExtractor is None and PyTorchFeatureExtractor is None:
             try:
-                inference_path = (
-                    Path(__file__).resolve().parents[2]
-                    / "nml"
-                    / "gesture_classifier"
-                    / "inference.py"
+                raise RuntimeError(
+                    "Feature extractors must be provided by a local application "
+                    "or loaded from a model-specific integration."
                 )
-                if not inference_path.exists():
-                    raise FileNotFoundError(
-                        "inference.py not found in nml/gesture_classifier."
-                    )
-                import importlib.util
-
-                spec = importlib.util.spec_from_file_location(
-                    "nml_gesture_inference", str(inference_path)
-                )
-                inference_mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(inference_mod)
-                KerasFeatureExtractor = getattr(
-                    inference_mod, "KerasFeatureExtractor", None
-                )
-                PyTorchFeatureExtractor = getattr(
-                    inference_mod, "PyTorchFeatureExtractor", None
-                )
-                if KerasFeatureExtractor is None and PyTorchFeatureExtractor is None:
-                    raise RuntimeError(
-                        "Feature extractor classes not found in inference.py."
-                    )
             except Exception as exc:
                 self._append_log(
                     "[compare] Feature extractor unavailable (import failed). "

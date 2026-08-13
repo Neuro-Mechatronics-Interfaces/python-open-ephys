@@ -188,7 +188,7 @@ states. Keep the main session window with the operator.
 
 Recommended LSL recording order:
 
-1. Resolve the EMG and `NML_TaskMarkers` streams in your chosen LSL recorder.
+1. Resolve the EMG and `Pyoephys_TaskMarkers` streams in your chosen LSL recorder.
 2. Start recording.
 3. Click **Start Task** in the session GUI.
 4. Allow the prompt plan to finish, or use **Pause Task** / **Stop Task**.

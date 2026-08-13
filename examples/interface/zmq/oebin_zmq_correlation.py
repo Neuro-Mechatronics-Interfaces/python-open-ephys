@@ -239,7 +239,6 @@ def plot_from_cache(o, z, lag_samples: int, lags_curve: np.ndarray, corr_curve: 
 if __name__ == "__main__":
 
     # Example usage:
-    #     OE_PATH = r"G:\Shared drives\NML_shared\DataShare\HDEMG Human Healthy\HD-EMG_Cuff\Jonathan\2025_07_31\raw\gestures"
     ap = argparse.ArgumentParser(description="Compare Open Ephys EMG with ZMQ EMG stream.")
     ap.add_argument("--file_path", type=str, required=True, help="Path to an Open Ephys .oebin file or directory")
     ap.add_argument("--force", action="store_true", help="Force re-capture and cache even if cache exists")

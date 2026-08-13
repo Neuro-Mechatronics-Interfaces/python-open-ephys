@@ -1,6 +1,6 @@
 @echo off
 REM Joint Angle Regression Data Collection GUI
-REM Neuro-Mechatronics Lab (NML)
+REM python-open-ephys example
 REM
 REM Prerequisites:
 REM   1. Open Ephys GUI running with ZMQ Interface plugin enabled

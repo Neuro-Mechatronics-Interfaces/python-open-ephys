@@ -84,7 +84,7 @@ def resolve_lsl_stream(name=None, stream_type=None, timeout=5.0):
     return StreamInlet(streams[0])
 
 
-def make_marker_outlet(stream_name="NML_TaskMarkers", source_id="nml_task_markers"):
+def make_marker_outlet(stream_name="Pyoephys_TaskMarkers", source_id="pyoephys_task_markers"):
     if not HAS_LSL:
         raise RuntimeError(f"pylsl import failed: {_LSL_IMPORT_ERROR!r}")
     info = StreamInfo(stream_name, "Markers", 1, 0, "string", source_id)
