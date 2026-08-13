@@ -1,6 +1,12 @@
-from pyoephys.applications import launch_emg_viewer
+import sys
+
+from PyQt5.QtWidgets import QApplication
+
+from pyoephys.applications import EMGViewer
 
 
 if __name__ == "__main__":
-    # Run the EMG selector application
-    launch_emg_viewer()
+    app = QApplication(sys.argv)
+    viewer = EMGViewer()
+    viewer.show()
+    sys.exit(app.exec_())
