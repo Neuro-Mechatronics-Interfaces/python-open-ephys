@@ -111,6 +111,8 @@ def build_outlets(
         "float32",
         f"{emg_stream_name}_src",
     )
+    timestamp_source = "reconstructed_from_lsl_receipt_and_output_rate"
+    emg_info.desc().append_child_value("timestamp_source", timestamp_source)
     emg_channels_xml = emg_info.desc().append_child("channels")
     for idx in range(int(emg_channels)):
         ch = emg_channels_xml.append_child("channel")
@@ -130,6 +132,7 @@ def build_outlets(
         "float32",
         f"{imu_stream_name}_src",
     )
+    imu_info.desc().append_child_value("timestamp_source", "repeated_latest_imu_at_emg_output_times")
     imu_channels_xml = imu_info.desc().append_child("channels")
     for name in [
         "acc_x",
@@ -158,6 +161,7 @@ def build_outlets(
             "float32",
             f"{adc_stream_name}_src",
         )
+        adc_info.desc().append_child_value("timestamp_source", timestamp_source)
         adc_channels_xml = adc_info.desc().append_child("channels")
         for idx in range(int(adc_channels)):
             ch = adc_channels_xml.append_child("channel")

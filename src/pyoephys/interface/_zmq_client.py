@@ -12,6 +12,7 @@ from collections import deque
 import threading
 from ._gui_client import GUIClient
 from ._gui_events import Event, Spike
+from ._zmq_sync import ZMQSync
 
 log = get_logger("ZMQClient")
 
@@ -61,7 +62,8 @@ class ZMQClient:
     def __init__(self, host_ip: str = "127.0.0.1", data_port: str = "5556", heartbeat_port: Optional[str] = None,
                  buffer_seconds: float = 30.0, expected_channel_count: Optional[int] = None, expected_channel_names: Optional[Iterable[str]] = None,
                  required_fraction: float = 1.0, max_channels: int = 256, auto_start: bool = False, set_index_looping: bool = True,
-                 align_to_header_index: bool = False, fill_value: float = np.nan, verbose: bool = False):
+                 align_to_header_index: bool = False, fill_value: float = np.nan, verbose: bool = False,
+                 *, sync_buffer_size: int = 0):
 
         # config
         self.host_ip = str(host_ip)
@@ -91,6 +93,7 @@ class ZMQClient:
         self.ready_event = threading.Event()
         self.channels_ready_event = threading.Event()
         self._lock = threading.Lock()
+        self._sync = ZMQSync(sync_buffer_size) if sync_buffer_size else None
 
         # stream / buffers
         self.fs: float = 2000.0  # default, updated from headers
@@ -246,6 +249,7 @@ class ZMQClient:
                 if self._data_sock and self._data_sock in socks:
                     try:
                         frames = self._data_sock.recv_multipart(flags=zmq.NOBLOCK)
+                        received = time.monotonic() if self._sync is not None else None
                         if len(frames) < 2:
                             continue
                         # frames[1]: JSON header; frames[2]: payload (if present)
@@ -255,6 +259,9 @@ class ZMQClient:
                             continue
 
                         typ = header.get("type", "")
+                        if self._sync is not None:
+                            with self._lock:
+                                self._sync.observe_message(header)
                         if typ == "data":
                             content = header.get("content", {})
                             ch = int(content.get("channel_num", -1))
@@ -274,6 +281,8 @@ class ZMQClient:
 
                             if 0 <= ch < self.max_channels and samples.size:
                                 with self._lock:
+                                    if self._sync is not None:
+                                        self._sync.waveform(content, ch, int(samples.size), received)
                                     # --- buffer/meta updates ---
                                     self.buffers[ch].extend(samples.tolist())
                                     self._name_by_index[ch] = ch_name
@@ -360,9 +369,13 @@ class ZMQClient:
                                         self.channels_ready_event.set()
 
                         elif typ == "event":
-                            evt = Event(header.get("content", {}), frames[2] if len(frames) >= 3 else None)
+                            content = header.get("content", {})
+                            payload = frames[2] if len(frames) >= 3 else b""
+                            if self._sync is not None:
+                                with self._lock:
+                                    self._sync.event(content, payload)
                             if self.verbose:
-                                print(evt)
+                                print(Event(content, payload))
 
                         elif typ == "spike":
                             spk = Spike(header.get("spike", {}), frames[2] if len(frames) >= 3 else None)
@@ -423,6 +436,9 @@ class ZMQClient:
         if self._thread and self._thread.is_alive():
             return
         self._setup()
+        if self._sync is not None:
+            with self._lock:
+                self._sync.restart()
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="ZMQClient", daemon=True)
         self._thread.start()
@@ -443,6 +459,17 @@ class ZMQClient:
         # do not terminate the shared Context (instance()) globally
 
     # ---------- selection & info ----------
+    def drain_sync(self):
+        """Return (ordered timing notifications, evicted count) since the last drain.
+
+        Set sync_buffer_size at construction to enable this separate buffer.
+        Hardware samples and reconstructed counts have distinct provenance.
+        An edge drained before waveform confirmation has segment=None and
+        sample_rate=None. Draining never waits for another packet.
+        """
+        with self._lock:
+            return self._sync.drain() if self._sync is not None else ([], 0)
+
     def set_channel_index(self, indices: Iterable[int]) -> None:
         with self._lock:
             idx = [int(i) for i in indices]

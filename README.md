@@ -103,6 +103,49 @@ pyoephys-playback --help
 The corresponding examples and LSL utilities are in
 [`examples/interface/lsl/`](examples/interface/lsl/).
 
+## Synchronize with a digital pulse
+
+Record in Binary format with event recording enabled. Trigger the Pico
+while recording and keep its LED in the camera view. Read both polarities
+from the recording's saved TTL channel:
+
+```python
+from pyoephys.io import read_digital_edges
+
+for edge in read_digital_edges("recording1/structure.oebin"):
+    if edge.line == 4:
+        print(edge.stream_id, edge.source, edge.sample_number, edge.sample_rate, edge.rising)
+```
+
+Lines are one-based. Use `event_folder` with a folder name from
+`structure.oebin` to select one TTL channel. Use `segment` to distinguish
+recordings when merging them. Compare pulse intervals in samples divided
+by the sample rate within a stream and segment, then match the sequence
+of edges to the LED turning on and off.
+
+For live synchronization, connect to the ZMQ Interface plugin and enable
+timing notifications with `ZMQClient(sync_buffer_size=4096)`. After
+`start()`, call `notifications, evicted = client.drain_sync()` regularly
+to receive `DigitalEdge` events and `SampleSpan` metadata in packet order.
+`evicted` counts notifications lost from the local queue since the last
+drain. Spans report forward gaps per stream and channel when successive
+packets supply sample numbers. Missing indices are counted locally and
+labeled `reconstructed`. A TTL edge received before waveform metadata can
+have an unknown sample rate. Its original sample number is still available.
+Segments change on a client restart, a decrease in message number, a sample-rate
+change, or a rewind on the stream's reference waveform channel. TTL events stay
+provisional in the bounded queue until the next indexed waveform establishes
+their segment. A drain returns immediately; unresolved events have `segment=None`
+and `sample_rate=None`, including events from an event-only stream. At a rewind
+or rate change, only queued events inside the new waveform's sample range are
+assigned to its segment. Other boundary events remain unknown. Packet order is
+preserved, and queue evictions include provisional events. Only compare sample
+numbers when both events have a known, matching stream and segment.
+
+The bundled LSL streaming example labels its reconstructed EMG and ADC
+timestamps and its repeated IMU values in the outlet metadata. Use saved
+TTL events to measure alignment to the camera LED.
+
 ## Examples
 
 - [`examples/read_files/`](examples/read_files/) — inspect metadata and convert recordings.
@@ -161,6 +204,36 @@ python -m twine check dist/*
 The manually triggered TestPyPI workflow is defined in
 [`.github/workflows/test_release.yml`](.github/workflows/test_release.yml).
 Published GitHub Releases trigger the PyPI workflow.
+
+### Release to PyPI
+
+Versions come from Git tags through `setuptools_scm`; do not manually edit
+`src/pyoephys/_version.py` or add a static version to `pyproject.toml`.
+The synchronization APIs added after 0.1.3 are intended for release 0.2.0.
+Use a new, unused version for every subsequent release.
+
+After the changes are committed and pushed to `main`, verify its GitHub Actions
+tests pass and the working tree is clean. From the repository root, with GitHub
+CLI authenticated, run:
+
+```bash
+git switch main
+git pull --ff-only origin main
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push origin v0.2.0
+gh release create v0.2.0 --verify-tag --title "v0.2.0" --generate-notes
+```
+
+Publishing that GitHub Release triggers
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml), which builds
+the tagged source and uploads it using the repository's `PYPI_API_TOKEN` secret.
+Pushing a tag alone does not publish to PyPI. Check the workflow succeeds before
+installing the release:
+
+```bash
+python -m pip install --upgrade "python-oephys==0.2.0"
+python -c "import pyoephys; print(pyoephys.__version__)"
+```
 
 ## Contributing
 

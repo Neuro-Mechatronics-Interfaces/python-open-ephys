@@ -55,6 +55,7 @@ submodules = [
     'ml',
     'plotting',
     'processing',
+    'sync',
 ]
 
 __all__ = submodules + [
